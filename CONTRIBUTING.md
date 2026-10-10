@@ -1,103 +1,62 @@
 # Contributing to UV-PRO
 
-Thanks for your interest in contributing! UV-PRO is a free, open-source ATAK plugin
-for off-grid team communication via UV-PRO radios.
+Updated: 2026-10-10
 
-## Building
+UV-PRO is an ATAK plugin that connects a BTECH UV-PRO radio and a MeshCore companion to the same map. Bug fixes and new features, including layout, are welcome. The maintainer reads the pull request and merges it when they agree.
 
-### Prerequisites
+Binding rules: [`CONSTITUTION.md`](CONSTITUTION.md). How the code is put together: [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md). AI assistants: [`AGENTS.md`](AGENTS.md).
 
-- **JDK 17** (Eclipse Temurin recommended)
-- **Android SDK** (API 35)
-- **ATAK-CIV 5.6.0 SDK** — `./tools/use-atak-sdk.sh 5.6.0` (see README)
+## Pull requests
 
-### Setup
+`main` is protected. Open a pull request. The maintainer is the reviewer. Do not merge your own pull request and do not force-push `main`.
 
-1. Clone the repo
-2. Extract the ATAK SDK files into `app/libs/atak-civ/` (see README for details)
-3. Build: `./gradlew assembleCivDebug`
-4. Install the APK alongside ATAK-CIV on your device
+In the description include:
 
-### Merges, update-server TLS, and TPC zips
+- what changed and why
+- how you built it (`assembleCivDebug` is enough for a normal change)
+- which link you tried: UV-PRO, MeshCore, Wi‑Fi/TAK, or none
+- a note if you touched version, signing, `atakmaps-ca.p12`, or update-server preferences
 
-Branches that touch plugin startup or **`UVProMapComponent`** can break **HTTPS trust** for the plugin repo (`atakmaps.com`) without compile errors. **`UVProLifecycle`** must still run early trust setup. See **[AGENTS.md](AGENTS.md)** sections **“Merging branches (do not break update-server TLS)”** and **“TPC submission zips”** before merging or cutting a TPC submission.
+A change that removes the UV-PRO link or the MeshCore link has to say that is intentional.
 
-### Merge gate (must pass before merge)
+Do not open a matching change against `atakmaps/TAK-MESHCORE`. That repository stays as the MeshCore-only plugin until the maintainer freezes it.
 
-These are **blocking** requirements for feature merges. If any item fails or is unverified, **do not merge**.
+## Build
 
-- Keep trust chain intact in `UVProMapComponent`:
-  `configureUpdateServerStatic` → `installUpdateServerTruststoreCompat` → `reloadCertificateManagerFromDatabase` → `registerUpdateServerCA` → deferred sync.
-- Keep early trust hook in `UVProLifecycle` (`UVProMapComponent.applyUpdateServerTrustEarly` or equivalent early path).
-- Keep trust assets and key material:
-  - `app/src/main/assets/atakmaps-ca.p12`
-  - `app/src/main/assets/isrg-root-x1.pem`
-  - `app/src/main/res/values/strings.xml` key `uvpro_trust_bundle_p12_key`
-- Do not rename update-server preference keys without ATAK 5.6.0 validation.
-- Do not ship ProGuard/R8 changes that break reflection or strip `com.uvpro.plugin.**` keeps.
-- Run and pass post-merge validation (below) on clean ATAK-CIV state.
+- JDK 17
+- Android SDK API 35
+- ATAK-CIV 5.6.0 SDK, obtained from the maintainer or through TAK. It is not in this repository. Do not commit it.
 
-#### Release-critical trust chain (do not simplify)
+```bash
+export ANDROID_HOME=/path/to/android-sdk
+export JAVA_HOME=/path/to/jdk-17
+ATAK_560_SDK=/path/to/ATAK-CIV-5.6.0.18-SDK ./tools/use-atak-sdk.sh 5.6.0
+./gradlew assembleCivDebug -PlocalDev=true
+```
 
-- In **`UVProMapComponent`**, keep the full chain intact:
-  `configureUpdateServerStatic` → `installUpdateServerTruststoreCompat` → `reloadCertificateManagerFromDatabase` → `registerUpdateServerCA` → deferred sync.
-- This flow also uses reflection on ATAK internals (`AtakCertificateDatabase`, `AtakCertificateDatabaseBase`, `CertificateManager`); treat merge conflicts in this area as high-risk.
-- Do **not** move plugin startup so trust setup runs after ATAK already started repo HTTPS (`getCACerts ... 0 certs` / socket-closed race).
-- In **`UVProLifecycle`**, keep `UVProMapComponent.applyUpdateServerTrustEarly` (or an equivalent early trust path).
+`local.properties` with `sdk.dir` stays on your machine. See the developer guide for flavors, release builds, and where files go.
 
-#### Required trust assets and settings
+## What needs extra care
 
-- Required assets in APK:
-  - `app/src/main/assets/atakmaps-ca.p12`
-  - `app/src/main/assets/isrg-root-x1.pem`
-- Required key material in `app/src/main/res/values/strings.xml`:
-  - `uvpro_trust_bundle_p12_key` (Base64; decoded at runtime by design).
-- `configureUpdateServerStatic` writes ATAK prefs such as `atakUpdateServerUrl`, `appMgmtUpdateServerUrl`, update-server toggles, and `updateServerCaLocation`; do not rename keys without testing on ATAK 5.6.0.
+These keep automatic updates working. Leave them alone unless the pull request is about them:
 
-#### R8 / ProGuard + toolbar notes
+- `UVProLifecycle` calling `UVProMapComponent.applyUpdateServerTrustEarly`
+- the trust sequence in `UVProMapComponent`: `configureUpdateServerStatic` → `installUpdateServerTruststoreCompat` → `reloadCertificateManagerFromDatabase` → `registerUpdateServerCA` → deferred sync
+- `app/src/main/assets/atakmaps-ca.p12`
+- `app/src/main/assets/isrg-root-x1.pem`
+- `uvpro_trust_bundle_p12_key` in `app/src/main/res/values/strings.xml`
+- `app/proguard-gradle.txt` keeps for `com.uvpro.plugin.**`
 
-- Keep root `app/proguard-gradle.txt` mapping flow (`-applymapping`) and do not strip `com.uvpro.plugin.**` keeps in a way that breaks reflection entry points.
-- Toolbar icon and cert logic are separate; keep quick-launcher using `UVProTool.toolbarIcon` / `ic_uvpro_toolbar` unless you intentionally rework ATAK tint behavior.
+A release (version bump in root `build.gradle`, `./tools/build-submission-zips.sh`, tag, update server) is something the maintainer asks for. Do not include it in a feature pull request.
 
-#### TPC submission checklist
+## Code
 
-- Version: bump `ext.PLUGIN_VERSION` in root `build.gradle` only (`app/build.gradle` derives `versionCode`).
-- Packaging: run `./tools/build-submission-zips.sh` or `./tools/package-submission.sh` (produces `UV-PRO-<ver>-ATAK-5.6.0-source.zip`).
-- Commit all files you want in the zip; uncommitted changes are excluded.
-- Keep `gradle/takdev/atak-gradle-takdev.jar` in-repo for offline TPC builds.
-- Run `./gradlew assembleCivRelease` first if you want local APK copied beside zip; ship the TPC-signed APK publicly.
+Java 17, 4-space indent. Log with a tag that starts with `UVPro` (existing tags such as `UVPro.BT` and `UVPro.Router` are the pattern). Shared chat, CoT, and routing behavior goes through `ChatBridge`, `CotBridge`, and `PacketRouter` so both radios stay on the same path.
 
-#### Post-merge validation
+## Issues
 
-- Run `./gradlew assembleCivRelease`.
-- Install on clean ATAK-CIV (`pm clear com.atakmap.app.civ`).
-- Verify logcat shows `UVPro`, `getCACerts for atakmaps.com`, and successful green sync in TAK Package Management.
-- If any expected cert/sync signal is missing, treat as a merge blocker and fix before merge.
-
-### Code Style
-
-- Java 17 language level
-- 4-space indentation
-- Android `Log.d/i/w/e` with tag prefix `BTRelay`
-
-## Areas Where Help Is Needed
-
-- Bluetooth connection reliability across different Android versions and devices
-- Voice PTT implementation and testing with real radio hardware
-- UI improvements and dark mode support
-- Testing with GMRS-PRO and UV-50X series radios
-- Battery usage optimization for long-duration deployments
-
-## Reporting Issues
-
-Use GitHub Issues. Please include:
-
-- Android version and device model
-- ATAK-CIV version
-- Radio model and firmware version
-- Steps to reproduce
-- Logcat output filtered by `BTRelay`
+Include Android version and device model, ATAK-CIV version, radio or MeshCore firmware if it matters, steps, and logcat filtered by `UVPro`. Do not paste tokens, certificate passwords, or a full preference dump from a field phone.
 
 ## License
 
-MIT + Commons Clause — see [LICENSE](LICENSE)
+MIT plus Commons Clause. See [LICENSE](LICENSE).

@@ -3,8 +3,10 @@
 A free, open-source ATAK plugin that connects UV-PRO radios to the Android Team Awareness Kit (ATAK) over Bluetooth. Team members with radios can share positions, chat, and situational awareness data entirely off-grid — no cell service or internet required.
 
 - Package: `com.uvpro.plugin`
-- Current version: `2.0.14`
+- Version string: `ext.PLUGIN_VERSION` in root `build.gradle` (the feature notes below lag that)
 - Target ATAK: **5.6.0** CIV only
+
+One plugin, two radios: a BTECH UV-PRO and a MeshCore companion. Developers and AI assistants start with [CONSTITUTION.md](CONSTITUTION.md), [docs/DEVELOPER-GUIDE.md](docs/DEVELOPER-GUIDE.md), [AGENTS.md](AGENTS.md), and [CONTRIBUTING.md](CONTRIBUTING.md). The tables below are the user-facing feature list, not the architecture.
 
 ## Features
 
@@ -94,7 +96,7 @@ A free, open-source ATAK plugin that connects UV-PRO radios to the Android Team 
 - **Mesh map Delete Contact:** `MeshDetailsDropDownReceiver` adds **Delete Contact** on the mesh marker details dropdown to remove the selected node marker and its ATAK contact entry.
 - **AX.25 Packet Terminal:** Graceful BBS hangup (`B` I-frame when connected, spaced DISC with poll/nopoll), KISS TX timing prime and frequency-lock reaffirm on disconnect, `hangupInProgress` blocks auto-reconnect during teardown, and last remote callsign/SSID persist across terminal reopen. Terminal is embedded inline in the scrollable plugin panel.
 - **Independent transmit toggles:** MeshCore and UV-PRO transmit switches operate independently with persisted prefs; `TransmitTransportResolver` routes TX to the connected path with silent fallback when the preferred transport is down (failover additionally updates the toggle after 5 min).
-- **Boot / BT (carry-over):** UV-PRO-first boot auto-connect, MeshCore boot after radio resolves (~35 s watchdog), classic BT passive reconnect with scan-button strobe feedback, and mesh fast-restore after radio/mesh BLE contention.
+- **Boot / BT (carry-over):** UV-PRO-first boot auto-connect, MeshCore boot 2 s after the radio connects or after a 7 s fallback if the radio does not (`UVProMapComponent` mesh boot schedule), classic BT passive reconnect with scan-button strobe feedback, and mesh fast-restore after radio/mesh BLE contention.
 
 ### 2026-06-11 Progress Update (Tool Preferences UI + restore buttons)
 
@@ -120,7 +122,7 @@ A free, open-source ATAK plugin that connects UV-PRO radios to the Android Team 
 
 ### 2026-06-08 Progress Update (v1.9.67)
 
-- **UV-PRO-first boot priority:** At ATAK startup, UV-PRO auto-connect runs before MeshCore. Mesh boot auto-connect is held until the radio connects, fails, has no saved target, or a ~35s watchdog expires — then MeshCore starts ~2.5s later so both transports do not fight on the same phone BT adapter.
+- **UV-PRO-first boot priority:** At ATAK startup, UV-PRO auto-connect runs before MeshCore. Mesh auto-connect starts 2 s after the UV-PRO connects, or after 7 s if the UV-PRO has not connected (the fallback keeps waiting while a UV-PRO connect attempt is still in flight). That spacing keeps both transports from opening sockets at the same instant.
 - **Mesh/radio BT coexistence:** Classic UV-PRO SPP can briefly drop an active MeshCore BLE session on one phone. The plugin detects contention, skips duplicate radio connect attempts, and fast-restores mesh (direct GATT reconnect, no availability probe) with retries after the radio link settles.
 - **Passive radio reconnect:** When mesh boot contention ends, UV-PRO passive reconnect arms with a **3s** first attempt (then every 60s). ACL events connect the saved bonded radio when it powers on without discovery scans.
 - **Periodic beacons (v1.9.66 carry-over):** Smart/periodic OPENRL and APRS beacons remain UV-PRO-only; a one-shot post-connect startup beacon may still use MeshCore when that transport is selected.

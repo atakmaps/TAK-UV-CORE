@@ -1,16 +1,12 @@
 ---
-description: Apply Mesh bug fixes to both plugins only after user-verified fix
+description: MeshCore fixes stay in UV-PRO until the maintainer asks to port them
 alwaysApply: true
 ---
 
-# Mesh Bug Fix Parity Rule
+# MeshCore scope
 
-When working on Mesh-related bugs that affect `MeshcoreAtak` and `Darksteal`:
+`CONSTITUTION.md` wins if this rule disagrees with it.
 
-1. Fix the bug in the currently targeted plugin first.
-2. Do **not** port the fix to the other plugin immediately.
-3. Wait for explicit user verification that the fix works (for example: user says "fixed", "works", or asks to port/apply to the other plugin).
-4. After verification, apply the same known-good fix to the other plugin.
-5. Keep behavior parity unless the user asks for plugin-specific differences.
+New MeshCore work for this product lands in this repository (UV-PRO). `atakmaps/TAK-MESHCORE` stays published until the maintainer freezes it.
 
-If verification has not happened yet, stop after the first-plugin fix and ask whether to port it.
+Do not port a fix into `TAK-MESHCORE` unless the maintainer asks. Do not edit that repo "for parity" in the same task.
