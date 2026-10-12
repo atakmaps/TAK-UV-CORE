@@ -36,6 +36,7 @@ import com.uvpro.plugin.ax25.AprsSymbolMapper;
 import com.uvpro.plugin.ax25.Ax25Frame;
 import com.uvpro.plugin.beacon.SmartBeacon;
 import com.uvpro.plugin.bluetooth.BtConnectionManager;
+import com.uvpro.plugin.bluetooth.MeshBtConnectionManager;
 import com.uvpro.plugin.chat.ChatBridge;
 import com.uvpro.plugin.crypto.EncryptionManager;
 import com.uvpro.plugin.chat.GeoChatContactListHelper;
@@ -2046,9 +2047,16 @@ public class CotBridge {
                     + " xmlBytes=" + xml.length()
                     + " compressedBytes=" + compressed.length);
 
-            // Fragment if needed
+            // Mesh keeps each piece in one channel packet. A 3-chunk join of a
+            // point reassembled to the right length and then failed gzip.
+            // UV-PRO still uses the 240-byte AX.25 limit.
+            int maxPayload = PacketFragmenter.MAX_FRAGMENT_PAYLOAD;
+            if (btManager instanceof MeshBtConnectionManager) {
+                maxPayload = ((MeshBtConnectionManager) btManager)
+                        .maxUvproPayloadForSinglePacket();
+            }
             List<UVProPacket> packets = PacketFragmenter.fragment(
-                    UVProPacket.TYPE_COT, compressed);
+                    UVProPacket.TYPE_COT, compressed, maxPayload);
 
             for (UVProPacket packet : packets) {
                 byte[] packetBytes = packet.encode();
@@ -2075,12 +2083,16 @@ public class CotBridge {
                         String trimUid = uid.trim();
                         PendingOutboundCot pending = new PendingOutboundCot(trimUid, event);
                         pendingOutboundCots.put(trimUid, pending);
-                        cotRetryExecutor.schedule(() -> {
-                            if (pendingOutboundCots.containsKey(trimUid)) {
-                                Log.d(TAG, "CoT double-send uid=" + trimUid);
-                                sendCotOverRadioNoRetry(pending.event);
-                            }
-                        }, COT_DOUBLE_SEND_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        // Mesh channel data is one flood. A second full copy 3s later collides
+                        // with the first. UV-PRO still sends the copy; it can hold the channel.
+                        if (!(btManager instanceof MeshBtConnectionManager)) {
+                            cotRetryExecutor.schedule(() -> {
+                                if (pendingOutboundCots.containsKey(trimUid)) {
+                                    Log.d(TAG, "CoT double-send uid=" + trimUid);
+                                    sendCotOverRadioNoRetry(pending.event);
+                                }
+                            }, COT_DOUBLE_SEND_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        }
                         scheduleCotRetryCheck(trimUid);
                     }
                 }
