@@ -5,8 +5,8 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 
 ## Done
 - `feature/meshcore-firmware-out-path` and its stash are deleted. Do not recreate them.
-- Branch `feature/mesh-single-packet` from `main` @ `d2addf3`. Rollback point `ef3679a` (2026-10-12). civDebug built and installed on both phones. Reload the plugin on each phone. Do not force-stop ATAK.
-- Mesh TX: a point is three single channel packets (127-byte cap), sent 2.5s apart. The ACK waits 3s so the last flood can finish, then holds the channel 2.5s so a GPS beacon cannot step on it. Mesh CoT retry is 20s. `path_len` stays `0xFF`. UV-PRO 240-byte split unchanged. Rollback: `ef3679a`.
+- Branch `feature/mesh-single-packet` from `main` @ `d2addf3`. Field-proven fallback `ab4c43c` (2026-10-12). Earlier rollback `ef3679a`. civDebug built and installed on both phones. Reload the plugin on each phone. Do not force-stop ATAK.
+- Mesh TX: a point is three single channel packets (127-byte cap), sent 2.5s apart. The ACK waits 3s so the last flood can finish, then holds the channel 2.5s so a GPS beacon cannot step on it. Mesh CoT retry is 20s. `path_len` stays `0xFF`. UV-PRO 240-byte split unchanged. Fallback: `ab4c43c`.
 - When a field log shows a delivery problem, fix it and tell Paul to reload and retest. Do not stop at the report.
 - Inbound unknown/neutral points keep their CoT type and callsign. Do not rewrite them to `b-m-p-s-p-i` / "Point".
 - Mesh RX still accepts old `UVAX1|` text. UV-PRO send path is unchanged. Mesh skips the 3-second CoT double-send.
@@ -17,7 +17,7 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 - Do not push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.
 
 ## Last user commit
-Last user commit (Darksteal): ef3679a — Oct 12 — "commit all changes for now so we can roll back if your next fix doesnt work"
+Last user commit (Darksteal): ab4c43c — Oct 12 — "commit all changes"
 
 ## Pointers
 - Synced handoff: `~/dev/agent-handoffs/Darksteal-MeshCore-Stock-Routing.md`
