@@ -141,6 +141,14 @@ public class MeshDetailsDropDownReceiver extends DropDownReceiver
             return;
         }
         sendMessageButton.setOnClickListener(v -> {
+            // Native MeshCore drops a direct message unless the other radio has this
+            // node saved as a favorite. Warn at the moment they open the chat.
+            if (uid != null && (uid.startsWith("MESHCORE-NODE-")
+                    || uid.startsWith("MESHCORE-RPTR-"))) {
+                Toast.makeText(getMapView().getContext(),
+                        "If recipient does not have you as a favorite, your message will not be delivered.",
+                        Toast.LENGTH_LONG).show();
+            }
             // Force exact UID contact targeting for map-selected Mesh markers.
             // Using callsign-first resolution can bind to unrelated non-mesh contacts.
             String ensured = ChatBridge.ensurePluginChatContactExactUid(callsign, uid);
