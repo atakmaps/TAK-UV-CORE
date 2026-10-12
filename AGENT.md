@@ -22,7 +22,7 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 - Do not push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.
 
 ## Last user commit
-Last user commit (Darksteal): 9d10060 — Oct 12 — "commit all changes"
+Last user commit (Darksteal): 0034acb — Oct 12 — bump to 2.0.20 for TAK submission
 
 ## Pointers
 - Synced handoff: `~/dev/agent-handoffs/Darksteal-MeshCore-Stock-Routing.md`
