@@ -36,9 +36,11 @@ import com.uvpro.plugin.ax25.AprsSymbolMapper;
 import com.uvpro.plugin.ax25.Ax25Frame;
 import com.uvpro.plugin.beacon.SmartBeacon;
 import com.uvpro.plugin.bluetooth.BtConnectionManager;
+import com.uvpro.plugin.bluetooth.MeshBtConnectionManager;
 import com.uvpro.plugin.chat.ChatBridge;
 import com.uvpro.plugin.crypto.EncryptionManager;
 import com.uvpro.plugin.chat.GeoChatContactListHelper;
+import com.uvpro.plugin.chat.GeoChatUnreadReconciler;
 import com.uvpro.plugin.chat.InboundGroupSyncApplier;
 import com.uvpro.plugin.protocol.RfSlottedCoTScheduler;
 import com.uvpro.plugin.protocol.RfTxArbitrator;
@@ -120,6 +122,8 @@ public class CotBridge {
                 t.setDaemon(true);
                 return t;
             });
+    private final java.util.concurrent.atomic.AtomicInteger meshGpsDeferGeneration =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     private final Context pluginContext;
     private final MapView mapView;
@@ -901,8 +905,6 @@ public class CotBridge {
 
     private static final String ANDROID_UID_PREFIX = "ANDROID-";
     private static final long GROUP_CONTACT_COT_REDUNDANT_TX_DELAY_MS = 1200L;
-    private static final Pattern AUTO_POINT_CALLSIGN =
-            Pattern.compile("^[A-Z]\\.\\d{2}\\.\\d{6,}$", Pattern.CASE_INSENSITIVE);
     private static final Pattern OPAQUE_DEVICE_ID_HEX16 =
             Pattern.compile("^[0-9A-F]{16}$", Pattern.CASE_INSENSITIVE);
 
@@ -926,17 +928,6 @@ public class CotBridge {
             return false;
         }
         return OPAQUE_DEVICE_ID_HEX16.matcher(normalized).matches();
-    }
-
-    private static boolean isPseudoPointContactIdentifier(String value) {
-        if (value == null) {
-            return false;
-        }
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) {
-            return false;
-        }
-        return AUTO_POINT_CALLSIGN.matcher(trimmed).matches() || isOpaqueDeviceId(trimmed);
     }
 
     /**
@@ -1383,7 +1374,6 @@ public class CotBridge {
                         + (xml.length() > 120 ? xml.substring(0, 120) + "…" : xml));
                 return;
             }
-            sanitizeInboundAutoPointCot(event);
             if (!isInboundDirectedRfCotForThisDevice(event)) {
                 Log.d(TAG, "Skipping directed RF CoT not addressed to this device: type="
                         + event.getType() + " uid=" + event.getUID()
@@ -1438,8 +1428,31 @@ public class CotBridge {
             }
             if (ackBytes != null) {
                 Ax25Frame ackFrame = Ax25Frame.createUVProFrame(localCallsign, 0, ackBytes);
-                btManager.sendKissFrame(ackFrame.encode());
-                Log.d(TAG, "CoT ACK sent uid=" + ackUid.trim());
+                byte[] ax25 = ackFrame.encode();
+                if (btManager instanceof MeshBtConnectionManager) {
+                    final byte[] paced = ax25;
+                    final BtConnectionManager tx = btManager;
+                    final String uid = ackUid.trim();
+                    cotRetryExecutor.schedule(() -> {
+                        try {
+                            if (!tx.isConnected()) {
+                                return;
+                            }
+                            com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
+                            try {
+                                tx.sendKissFrame(paced);
+                                Log.d(TAG, "CoT ACK sent uid=" + uid);
+                            } finally {
+                                com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxEnd();
+                            }
+                        } catch (Exception e) {
+                            Log.w(TAG, "Failed to send CoT ACK uid=" + uid, e);
+                        }
+                    }, MESH_COT_ACK_QUIET_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } else {
+                    btManager.sendKissFrame(ax25);
+                    Log.d(TAG, "CoT ACK sent uid=" + ackUid.trim());
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "Failed to send CoT ACK uid=" + ackUid, e);
@@ -1561,43 +1574,6 @@ public class CotBridge {
             Log.e(TAG, "sendGrgSettingsBundle failed", e);
             return new GrgShareResult(false, "GRG share failed: " + e.getMessage());
         }
-    }
-
-    /**
-     * Convert auto-generated ATAK point names (U.27.xxxxxx / N.27.xxxxxx) into
-     * plain map-point presentation so they do not appear as pseudo-contacts.
-     */
-    private void sanitizeInboundAutoPointCot(CotEvent event) {
-        if (event == null) {
-            return;
-        }
-        String type = event.getType();
-        if (type == null || !(type.startsWith("a-u-G") || type.startsWith("a-n-G"))) {
-            return;
-        }
-        CotDetail detail = event.getDetail();
-        if (detail == null) {
-            return;
-        }
-        CotDetail contact = detail.getFirstChildByName(0, "contact");
-        if (contact == null) {
-            return;
-        }
-        String callsign = contact.getAttribute("callsign");
-        String trimmed = callsign != null ? callsign.trim() : "";
-        String uid = event.getUID();
-        boolean callsignLooksAuto = isPseudoPointContactIdentifier(trimmed);
-        boolean uidLooksAuto = isPseudoPointContactIdentifier(uid);
-        if (!callsignLooksAuto && !uidLooksAuto) {
-            return;
-        }
-        contact.setAttribute("callsign", "Point");
-        event.setType("b-m-p-s-p-i");
-        Log.d(TAG, "Sanitized inbound auto-point CoT uid=" + event.getUID()
-                + " callsign=" + trimmed
-                + " callsignAuto=" + callsignLooksAuto
-                + " uidAuto=" + uidLooksAuto
-                + " -> Point");
     }
 
     /**
@@ -1761,6 +1737,15 @@ public class CotBridge {
             }
             if (!contactListUpdate) {
                 notifyInboundRfChat(event);
+            }
+            if ("b-t-f".equals(event.getType())) {
+                final String badgeConversation = GeoChatContactListHelper.isAllChatRoomsGeoChat(event)
+                        ? "All Chat Rooms"
+                        : inboundSenderUid;
+                if (badgeConversation != null && !badgeConversation.trim().isEmpty() && mapView != null) {
+                    mapView.post(() -> GeoChatUnreadReconciler.reconcileConversation(
+                            badgeConversation.trim()));
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "GeoChatService.onCotEvent failed, fallback dispatch", e);
@@ -2004,6 +1989,15 @@ public class CotBridge {
      */
     /** Max compressed CoT size to send over RF. Larger items flood the channel. */
     private static final int MAX_COT_COMPRESSED_BYTES = 4096;
+    /**
+     * Pause between mesh CoT packets. 800ms let the first two 126-byte floods
+     * land and often dropped the third while the radio or repeater was still busy.
+     */
+    private static final long MESH_COT_PACKET_GAP_MS = 2500L;
+    /** Wait after the last inbound piece before the ACK, so it is not stepped on. */
+    private static final long MESH_COT_ACK_QUIET_MS = 3000L;
+    /** Mesh retry waits past the paced send and the quiet ACK. UV-PRO stays at 15s. */
+    private static final long MESH_COT_RETRY_INTERVAL_MS = 20_000L;
 
     public void sendCotOverRadio(CotEvent event) {
         sendCotOverRadioInternal(event, true);
@@ -2020,6 +2014,7 @@ public class CotBridge {
         }
 
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
+        boolean holdMeshTx = false;
         try {
             String xml = event.toString();
             byte[] full = CotBuilder.compressCot(xml);
@@ -2046,10 +2041,20 @@ public class CotBridge {
                     + " xmlBytes=" + xml.length()
                     + " compressedBytes=" + compressed.length);
 
-            // Fragment if needed
+            // Mesh keeps each piece in one channel packet. A 3-chunk join of a
+            // point reassembled to the right length and then failed gzip.
+            // UV-PRO still uses the 240-byte AX.25 limit.
+            int maxPayload = PacketFragmenter.MAX_FRAGMENT_PAYLOAD;
+            if (btManager instanceof MeshBtConnectionManager) {
+                maxPayload = ((MeshBtConnectionManager) btManager)
+                        .maxUvproPayloadForSinglePacket();
+            }
             List<UVProPacket> packets = PacketFragmenter.fragment(
-                    UVProPacket.TYPE_COT, compressed);
+                    UVProPacket.TYPE_COT, compressed, maxPayload);
 
+            boolean paceMeshPackets = btManager instanceof MeshBtConnectionManager
+                    && packets.size() > 1;
+            int packetIndex = 0;
             for (UVProPacket packet : packets) {
                 byte[] packetBytes = packet.encode();
                 // Encrypt entire packet bytes if enabled
@@ -2063,7 +2068,26 @@ public class CotBridge {
                 Ax25Frame frame = Ax25Frame.createUVProFrame(
                         localCallsign, 0, packetBytes);
                 byte[] ax25 = frame.encode();
-                btManager.sendKissFrame(ax25);
+                if (paceMeshPackets && packetIndex > 0) {
+                    final byte[] paced = ax25;
+                    final BtConnectionManager tx = btManager;
+                    cotRetryExecutor.schedule(() -> {
+                        if (tx.isConnected()) {
+                            tx.sendKissFrame(paced);
+                        }
+                    }, MESH_COT_PACKET_GAP_MS * packetIndex,
+                            java.util.concurrent.TimeUnit.MILLISECONDS);
+                } else {
+                    btManager.sendKissFrame(ax25);
+                }
+                packetIndex++;
+            }
+            if (paceMeshPackets) {
+                holdMeshTx = true;
+                cotRetryExecutor.schedule(
+                        () -> com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxEnd(),
+                        MESH_COT_PACKET_GAP_MS * (packets.size() - 1L),
+                        java.util.concurrent.TimeUnit.MILLISECONDS);
             }
 
             // Register ACK watchdog — skip GeoChat CoT (b-t-f*) which uses chat retry.
@@ -2075,12 +2099,16 @@ public class CotBridge {
                         String trimUid = uid.trim();
                         PendingOutboundCot pending = new PendingOutboundCot(trimUid, event);
                         pendingOutboundCots.put(trimUid, pending);
-                        cotRetryExecutor.schedule(() -> {
-                            if (pendingOutboundCots.containsKey(trimUid)) {
-                                Log.d(TAG, "CoT double-send uid=" + trimUid);
-                                sendCotOverRadioNoRetry(pending.event);
-                            }
-                        }, COT_DOUBLE_SEND_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        // Mesh channel data is one flood. A second full copy 3s later collides
+                        // with the first. UV-PRO still sends the copy; it can hold the channel.
+                        if (!(btManager instanceof MeshBtConnectionManager)) {
+                            cotRetryExecutor.schedule(() -> {
+                                if (pendingOutboundCots.containsKey(trimUid)) {
+                                    Log.d(TAG, "CoT double-send uid=" + trimUid);
+                                    sendCotOverRadioNoRetry(pending.event);
+                                }
+                            }, COT_DOUBLE_SEND_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        }
                         scheduleCotRetryCheck(trimUid);
                     }
                 }
@@ -2088,14 +2116,19 @@ public class CotBridge {
         } catch (Exception e) {
             Log.e(TAG, "Error sending CoT over radio", e);
         } finally {
-            com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxEnd();
+            if (!holdMeshTx) {
+                com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxEnd();
+            }
         }
     }
 
     private void scheduleCotRetryCheck(String cotUid) {
         if (cotRetryExecutor.isShutdown()) return;
+        long delayMs = btManager instanceof MeshBtConnectionManager
+                ? MESH_COT_RETRY_INTERVAL_MS
+                : COT_RETRY_INTERVAL_MS;
         cotRetryExecutor.schedule(() -> onCotRetryTimer(cotUid),
-                COT_RETRY_INTERVAL_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     private void onCotRetryTimer(String cotUid) {
@@ -2383,6 +2416,21 @@ public class CotBridge {
                                       float speed, float course, int battery) {
         if (txManager == null || !txManager.isConnected()) {
             return false;
+        }
+        if (txManager instanceof MeshBtConnectionManager) {
+            long waitMs = com.uvpro.plugin.protocol.RfTxArbitrator.get().millisUntilOpenRlClear();
+            if (waitMs > 0) {
+                final int generation = meshGpsDeferGeneration.incrementAndGet();
+                final BtConnectionManager tx = txManager;
+                Log.d(TAG, "GPS beacon deferred " + waitMs + "ms — channel busy");
+                cotRetryExecutor.schedule(() -> {
+                    if (generation != meshGpsDeferGeneration.get()) {
+                        return;
+                    }
+                    sendPositionOverRadio(tx, lat, lon, alt, speed, course, battery);
+                }, waitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                return true;
+            }
         }
 
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();

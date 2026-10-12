@@ -39,6 +39,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -135,7 +136,18 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     private static final long DEVICE_CONTACTS_FETCH_TIMEOUT_MS = 30_000L;
 
     private static final int MAX_MESH_MESSAGE_LEN = 130;
-    private static final int MAX_RAW_AX25_CHUNK = 57;
+    /**
+     * Channel-data bytes per LoRa packet. Firmware accepts 165, but a 165-byte
+     * chunk never arrived. 100-byte packets did, and five of those sent at once
+     * dropped a piece. 127 keeps a 308-byte point to three single packets.
+     */
+    private static final int MESH_GROUP_DATA_MAX = 127;
+    /** One AX.25 frame in a single channel-data payload. */
+    private static final int MESH_AX25_SINGLE = 0xB1;
+    /** AX.25 slice when the frame is larger than one LoRa packet. */
+    private static final int MESH_AX25_PART = 0xB2;
+    /** marker + uint16 id + seq + total */
+    private static final int MESH_AX25_PART_HEADER = 5;
     private static final int ADVERT_LOC_NONE = 0;
     private static final int ADVERT_LOC_SHARE = 1;
     private static final String ENV_PREFIX = "UVAX1|";
@@ -265,6 +277,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Map<Integer, ChunkAccumulator> chunkBuffers = new ConcurrentHashMap<>();
+    private final Map<Integer, ChunkAccumulator> binaryChunkBuffers = new ConcurrentHashMap<>();
     private final ArrayDeque<byte[]> writeQueue = new ArrayDeque<>();
     private final ArrayDeque<PendingChannelText> pendingChannelTextSends = new ArrayDeque<>();
     private boolean writeInFlight = false;
@@ -1509,80 +1522,64 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (!connected.get() || ax25Frame == null || ax25Frame.length == 0) {
             return false;
         }
-        if (radioSilenceEnabled.get()) {
+        if (blockedByRadioSilence()) {
             return false;
         }
 
         int channel = getMeshChannelIndex();
-        int msgId = outboundMsgId.getAndIncrement() & 0x7fffffff;
-        String msgIdStr = String.valueOf(msgId);
-        int total = sendAx25EnvelopeChunks(channel, msgIdStr, ax25Frame);
+        int msgId = outboundMsgId.getAndIncrement() & 0xFFFF;
+        int total = sendAx25EnvelopeChunks(channel, msgId, ax25Frame);
         if (total <= 0) {
             return false;
         }
-        Log.d(TAG, "TX ATAK_DATA ch=" + channel + " ax25=" + ax25Frame.length + " bytes"
+        Log.i(TAG, "TX ATAK_DATA ch=" + channel + " ax25=" + ax25Frame.length + " bytes"
                 + " chunks=" + total);
         packetRouter.notifyPacketTransmitted();
         return true;
     }
 
     /**
-     * Send UVAX1 envelope chunk(s). Prefer a single companion frame when the full AX.25
-     * frame fits the 130-char mesh envelope limit (typical OPENRL GPS beacons).
+     * One LoRa group-data packet holds {@link #MESH_GROUP_DATA_MAX} bytes.
+     * A frame that fits is {@code 0xB1} plus the raw AX.25. A larger frame is
+     * {@code 0xB2} plus id, seq, total, and a raw slice. Channel path stays flood.
      */
-    private int sendAx25EnvelopeChunks(int channel, String msgIdStr, byte[] ax25Frame) {
-        String singlePayload = buildAx25EnvelopePayload(msgIdStr, 1, 1, ax25Frame);
-        if (singlePayload != null && singlePayload.length() <= MAX_MESH_MESSAGE_LEN) {
-            enqueueCommand(buildSendChannelDataCommand(
-                    channel,
-                    ATAK_DATA_TYPE_AX25,
-                    singlePayload.getBytes(StandardCharsets.UTF_8)));
+    private int sendAx25EnvelopeChunks(int channel, int msgId, byte[] ax25Frame) {
+        if (ax25Frame.length <= MESH_GROUP_DATA_MAX - 1) {
+            byte[] payload = new byte[1 + ax25Frame.length];
+            payload[0] = (byte) MESH_AX25_SINGLE;
+            System.arraycopy(ax25Frame, 0, payload, 1, ax25Frame.length);
+            enqueueCommand(buildSendChannelDataCommand(channel, ATAK_DATA_TYPE_AX25, payload));
             return 1;
         }
-
-        int chunkSize = maxRawAx25ChunkBytes(msgIdStr, MAX_RAW_AX25_CHUNK);
-        if (chunkSize < 1) {
+        int sliceMax = MESH_GROUP_DATA_MAX - MESH_AX25_PART_HEADER;
+        int total = (ax25Frame.length + sliceMax - 1) / sliceMax;
+        if (total < 2 || total > 255) {
+            Log.w(TAG, "AX.25 frame does not fit mesh channel slices len=" + ax25Frame.length);
             return 0;
         }
-        int total = (ax25Frame.length + chunkSize - 1) / chunkSize;
-        for (int i = 0; i < total; i++) {
-            int off = i * chunkSize;
-            int len = Math.min(chunkSize, ax25Frame.length - off);
-            byte[] chunk = new byte[len];
-            System.arraycopy(ax25Frame, off, chunk, 0, len);
-            String payload = buildAx25EnvelopePayload(msgIdStr, i + 1, total, chunk);
-            if (payload == null || payload.length() > MAX_MESH_MESSAGE_LEN) {
-                return 0;
-            }
-            enqueueCommand(buildSendChannelDataCommand(
-                    channel,
-                    ATAK_DATA_TYPE_AX25,
-                    payload.getBytes(StandardCharsets.UTF_8)));
+        for (int seq = 1; seq <= total; seq++) {
+            int off = (seq - 1) * sliceMax;
+            int len = Math.min(sliceMax, ax25Frame.length - off);
+            byte[] payload = new byte[MESH_AX25_PART_HEADER + len];
+            payload[0] = (byte) MESH_AX25_PART;
+            payload[1] = (byte) (msgId & 0xFF);
+            payload[2] = (byte) ((msgId >> 8) & 0xFF);
+            payload[3] = (byte) seq;
+            payload[4] = (byte) total;
+            System.arraycopy(ax25Frame, off, payload, MESH_AX25_PART_HEADER, len);
+            enqueueCommand(buildSendChannelDataCommand(channel, ATAK_DATA_TYPE_AX25, payload));
         }
         return total;
     }
 
-    private static String buildAx25EnvelopePayload(String msgIdStr, int seq, int total, byte[] raw) {
-        if (raw == null || raw.length == 0) {
-            return null;
-        }
-        String b64 = Base64.encodeToString(raw, Base64.NO_WRAP);
-        return ENV_PREFIX + msgIdStr + "|" + seq + "|" + total + "|" + b64;
-    }
-
-  /** Max raw bytes per chunk so the UVAX1 envelope stays within {@link #MAX_MESH_MESSAGE_LEN}. */
-    private static int maxRawAx25ChunkBytes(String msgIdStr, int fallback) {
-        int maxRaw = 0;
-        for (int n = 1; n <= fallback; n++) {
-            // Worst-case seq/total digit width for envelope header sizing.
-            String probe = buildAx25EnvelopePayload(msgIdStr, 9, 9, new byte[n]);
-            if (probe != null && probe.length() <= MAX_MESH_MESSAGE_LEN) {
-                maxRaw = n;
-            } else {
-                break;
-            }
-        }
-        return maxRaw > 0 ? maxRaw : fallback;
+    /**
+     * Largest UV-PRO payload that still fits in one channel packet.
+     * AX.25 UI header is 16 bytes, UV-PRO header is 3, and the channel
+     * payload is {@code 0xB1} plus that frame. Multi-chunk joins of a point
+     * arrived at the right length and then failed gzip.
+     */
+    public int maxUvproPayloadForSinglePacket() {
+        return (MESH_GROUP_DATA_MAX - 1) - 16 - 3;
     }
 
     private static final long[] INCOMPLETE_CHUNK_DRAIN_DELAYS_MS = {25L, 100L, 300L};
@@ -1609,6 +1606,9 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (!connected.get() || data == null || data.length == 0) {
             return false;
         }
+        if (blockedByRadioSilence()) {
+            return false;
+        }
         String payload = "UVRAW|" + Base64.encodeToString(data, Base64.NO_WRAP);
         if (payload.length() > MAX_MESH_MESSAGE_LEN) {
             return false;
@@ -1623,6 +1623,16 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     @Override
     public void setRadioSilenceEnabled(boolean enabled) {
         radioSilenceEnabled.set(enabled);
+        Log.i(TAG, "Radio Silence " + (enabled ? "enabled" : "disabled"));
+    }
+
+    /** Air sends stop. Companion reads and local radio settings stay allowed. */
+    private boolean blockedByRadioSilence() {
+        if (!radioSilenceEnabled.get()) {
+            return false;
+        }
+        Log.w(TAG, "TX blocked by Radio Silence");
+        return true;
     }
 
     @Override
@@ -1856,6 +1866,9 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (!connected.get()) {
             return false;
         }
+        if (blockedByRadioSilence()) {
+            return false;
+        }
         byte[] pubKey = pubKeyPrefixBytes(pubKeyHex, CONTACT_PUB_KEY_BYTES);
         if (pubKey == null) {
             Log.w(TAG, "Room login aborted: invalid pubkey");
@@ -1876,6 +1889,9 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     public boolean sendContactCliMessage(String pubKeyHex, String cliCommand) {
         if (!connected.get() || cliCommand == null || cliCommand.trim().isEmpty()) {
+            return false;
+        }
+        if (blockedByRadioSilence()) {
             return false;
         }
         byte[] prefix = pubKeyPrefixBytes(pubKeyHex, 6);
@@ -2047,6 +2063,9 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (!connected.get()) {
             return false;
         }
+        if (blockedByRadioSilence()) {
+            return false;
+        }
         if (text == null) {
             return false;
         }
@@ -2090,7 +2109,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (!connected.get()) {
             return false;
         }
-        if (radioSilenceEnabled.get()) {
+        if (blockedByRadioSilence()) {
             return false;
         }
         if (text == null || text.trim().isEmpty()) {
@@ -2132,7 +2151,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     }
 
     public boolean sendSelfAdvert() {
-        if (!connected.get()) {
+        if (!connected.get() || blockedByRadioSilence()) {
             return false;
         }
         // Firmware: 1 byte = zero-hop only; 2nd byte 0x01 = flood (mesh-wide discovery).
@@ -2146,7 +2165,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
      * {@code CMD_SEND_CONTROL_DATA} / {@code CTL_TYPE_NODE_DISCOVER_REQ}).
      */
     public boolean sendNodeDiscoverRequest() {
-        if (!connected.get()) {
+        if (!connected.get() || blockedByRadioSilence()) {
             return false;
         }
         byte[] tagBytes = new byte[4];
@@ -2590,6 +2609,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
             writeInFlight = false;
         }
         chunkBuffers.clear();
+        binaryChunkBuffers.clear();
     }
 
     private void enqueueCommand(byte[] cmd) {
@@ -2723,7 +2743,10 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     private byte[] buildSendChannelDataCommand(int channel, int dataType, byte[] payload) {
         int payloadLen = payload != null ? payload.length : 0;
-        ByteBuffer buf = ByteBuffer.allocate(6 + payloadLen);
+        // Header is command, channel, flood path, and the uint16 data type.
+        // An unused trailing byte used to ride along and cut the last character
+        // off any chat that needed two channel packets.
+        ByteBuffer buf = ByteBuffer.allocate(5 + payloadLen);
         buf.order(ByteOrder.LITTLE_ENDIAN);
         buf.put(CMD_SEND_CHANNEL_DATA);
         buf.put((byte) Math.max(0, Math.min(7, channel)));
@@ -3150,7 +3173,17 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (advert == null || context == null) {
             return;
         }
-        String dedupKey = advert.pubKeyHex + ":" + advert.advertTimestampSec;
+        // Repeaters stay on the map for their cache TTL. The old key included the
+        // advert timestamp and lived only in this process, so every reboot toasted
+        // "new repeater" for ones already saved.
+        if (com.uvpro.plugin.UVProMapComponent.isKnownMeshRepeater(advert.pubKeyHex)) {
+            return;
+        }
+        String dedupKey = advert.pubKeyHex != null
+                ? advert.pubKeyHex.trim().toUpperCase(java.util.Locale.US) : "";
+        if (dedupKey.isEmpty()) {
+            return;
+        }
         Long previous = repeaterToastDedupByPubKeyTs.putIfAbsent(dedupKey, advert.advertTimestampSec);
         if (previous != null) {
             return;
@@ -3456,10 +3489,91 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (dataType != ATAK_DATA_TYPE_AX25 && dataType != ATAK_DATA_TYPE_RAW) {
             return;
         }
-        String text = new String(pkt, 9, copyLen, StandardCharsets.UTF_8);
+        byte[] raw = Arrays.copyOfRange(pkt, 9, 9 + copyLen);
+        int marker = raw[0] & 0xFF;
+        if (marker == MESH_AX25_SINGLE || marker == MESH_AX25_PART) {
+            int pathLen = pkt[5] & 0xFF;
+            if (pathLen == 0xFF) {
+                pathLen = 0;
+            }
+            handleBinaryAx25Payload(raw, pathLen);
+            return;
+        }
+        String text = new String(raw, StandardCharsets.UTF_8);
         String routed = extractRoutableEnvelope(text);
         if (routed != null) {
             handleMeshMessage(routed, 0);
+        }
+    }
+
+    /**
+     * Mesh channel payload is raw AX.25. {@code 0xB1} is one frame. {@code 0xB2} is a slice
+     * of a frame that did not fit in one channel packet. Text envelopes that start with {@code UVAX1|}
+     * stay on the old path so a radio still running that build can be heard.
+     */
+    private void handleBinaryAx25Payload(byte[] payload, int pathLen) {
+        if (payload == null || payload.length < 2) {
+            return;
+        }
+        int marker = payload[0] & 0xFF;
+        if (marker == MESH_AX25_SINGLE) {
+            deliverAssembledAx25(Arrays.copyOfRange(payload, 1, payload.length), pathLen);
+            return;
+        }
+        if (marker != MESH_AX25_PART || payload.length <= MESH_AX25_PART_HEADER) {
+            return;
+        }
+        int msgId = (payload[1] & 0xFF) | ((payload[2] & 0xFF) << 8);
+        int seq = payload[3] & 0xFF;
+        int total = payload[4] & 0xFF;
+        if (total < 2 || seq < 1 || seq > total) {
+            return;
+        }
+        byte[] slice = Arrays.copyOfRange(payload, MESH_AX25_PART_HEADER, payload.length);
+        ChunkAccumulator acc = binaryChunkBuffers.get(msgId);
+        if (acc == null || acc.total != total) {
+            acc = new ChunkAccumulator(total);
+            binaryChunkBuffers.put(msgId, acc);
+        }
+        acc.parts.put(seq, slice);
+        acc.lastUpdateMs = System.currentTimeMillis();
+        if (acc.parts.size() < total) {
+            scheduleIncompleteChunkDrain();
+            return;
+        }
+        int len = 0;
+        for (int i = 1; i <= total; i++) {
+            byte[] part = acc.parts.get(i);
+            if (part == null) {
+                return;
+            }
+            len += part.length;
+        }
+        byte[] ax25 = new byte[len];
+        int off = 0;
+        for (int i = 1; i <= total; i++) {
+            byte[] part = acc.parts.get(i);
+            System.arraycopy(part, 0, ax25, off, part.length);
+            off += part.length;
+        }
+        binaryChunkBuffers.remove(msgId);
+        deliverAssembledAx25(ax25, pathLen);
+    }
+
+    private void deliverAssembledAx25(byte[] ax25, int pathLen) {
+        if (ax25 == null || ax25.length == 0) {
+            return;
+        }
+        for (RawDataListener listener : rawDataListeners) {
+            try {
+                if (listener.onRawBytes(ax25)) {
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (packetRouter != null) {
+            packetRouter.routeIncoming(ax25, pathLen);
         }
     }
 
@@ -3989,6 +4103,13 @@ public class MeshBtConnectionManager extends BtConnectionManager {
             if (acc == null) continue;
             if (now - acc.lastUpdateMs > 120_000L) {
                 chunkBuffers.remove(e.getKey());
+            }
+        }
+        for (Map.Entry<Integer, ChunkAccumulator> e : binaryChunkBuffers.entrySet()) {
+            ChunkAccumulator acc = e.getValue();
+            if (acc == null) continue;
+            if (now - acc.lastUpdateMs > 120_000L) {
+                binaryChunkBuffers.remove(e.getKey());
             }
         }
     }

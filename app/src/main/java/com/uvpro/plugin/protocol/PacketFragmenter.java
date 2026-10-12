@@ -46,9 +46,19 @@ public class PacketFragmenter {
      *         If payload fits in one frame, returns a single unfragmented packet.
      */
     public static List<UVProPacket> fragment(int type, byte[] payload) {
-        List<UVProPacket> results = new ArrayList<>();
+        return fragment(type, payload, MAX_FRAGMENT_PAYLOAD);
+    }
 
-        if (payload.length <= MAX_FRAGMENT_PAYLOAD) {
+    /**
+     * @param maxPayload largest UV-PRO payload, including the 4-byte fragment header
+     *                   when the payload must be split
+     */
+    public static List<UVProPacket> fragment(int type, byte[] payload, int maxPayload) {
+        List<UVProPacket> results = new ArrayList<>();
+        int limit = maxPayload < (FRAGMENT_HEADER_SIZE + 1)
+                ? MAX_FRAGMENT_PAYLOAD : maxPayload;
+
+        if (payload.length <= limit) {
             // No fragmentation needed
             results.add(new UVProPacket((byte) type, payload));
             return results;
@@ -59,7 +69,7 @@ public class PacketFragmenter {
                 ? UVProPacket.TYPE_COT_FRAGMENT : type;
 
         int fragmentId = getNextFragmentId();
-        int maxPayloadPerFrag = MAX_FRAGMENT_PAYLOAD - FRAGMENT_HEADER_SIZE;
+        int maxPayloadPerFrag = limit - FRAGMENT_HEADER_SIZE;
         int totalFragments = (payload.length + maxPayloadPerFrag - 1)
                 / maxPayloadPerFrag;
 

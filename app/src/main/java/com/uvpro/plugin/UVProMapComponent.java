@@ -1179,6 +1179,46 @@ try {
         }
     }
 
+    /**
+     * True when this pubkey is still inside the repeater cache TTL or already drawn.
+     * Used so a reboot does not toast "new repeater" for Shining Light and the rest.
+     */
+    public static boolean isKnownMeshRepeater(String pubKeyHex) {
+        String pubKey = sanitizeRepeaterUidSuffix(pubKeyHex);
+        if (pubKey.isEmpty() || "UNKNOWN".equals(pubKey)) {
+            return false;
+        }
+        try {
+            com.atakmap.android.maps.MapView mv = com.atakmap.android.maps.MapView.getMapView();
+            if (mv != null && mv.getRootGroup() != null
+                    && mv.getRootGroup().deepFindUID("MESHCORE-RPTR-" + pubKey) != null) {
+                return true;
+            }
+            Context ctx = mv != null ? mv.getContext() : null;
+            if (ctx == null) {
+                return false;
+            }
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
+            String raw = prefs.getString(PREF_MESH_REPEATER_CACHE, "[]");
+            JSONArray arr = new JSONArray(raw != null ? raw : "[]");
+            long now = System.currentTimeMillis();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o == null) {
+                    continue;
+                }
+                String key = sanitizeRepeaterUidSuffix(o.optString("pubKeyHex", ""));
+                if (!pubKey.equals(key)) {
+                    continue;
+                }
+                return !MeshNodeCachePolicy.shouldEvictRepeaterByTtl(
+                        o, key, now, MESH_REPEATER_TTL_MS, ctx);
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     private void persistRepeaterAdvert(MeshBtConnectionManager.RepeaterAdvert advert, String display) {
         if (advert == null || advert.pubKeyHex == null || advert.pubKeyHex.trim().isEmpty()) {
             return;

@@ -1592,8 +1592,8 @@ public class UVProDropDownReceiver extends DropDownReceiver
                             "Long press to toggle Radio Silence.",
                             Toast.LENGTH_SHORT).show());
             btnRadioSilence.setOnLongClickListener(v -> {
-                boolean enabled = !btManager.isRadioSilenceEnabled();
-                btManager.setRadioSilenceEnabled(enabled);
+                boolean enabled = !isRadioSilenceEnabled();
+                setRadioSilenceOnBothTransports(enabled);
                 updateRadioSilenceButtonUi();
                 refreshChannelGridAsync();
                 appendLog(enabled
@@ -8434,11 +8434,26 @@ public class UVProDropDownReceiver extends DropDownReceiver
         }
     }
 
+    private boolean isRadioSilenceEnabled() {
+        return (btManager != null && btManager.isRadioSilenceEnabled())
+                || (meshBtManager != null && meshBtManager.isRadioSilenceEnabled());
+    }
+
+    /** One button covers both radios. Each manager keeps its own flag. */
+    private void setRadioSilenceOnBothTransports(boolean enabled) {
+        if (btManager != null) {
+            btManager.setRadioSilenceEnabled(enabled);
+        }
+        if (meshBtManager != null) {
+            meshBtManager.setRadioSilenceEnabled(enabled);
+        }
+    }
+
     private void updateRadioSilenceButtonUi() {
         if (btnRadioSilence == null) {
             return;
         }
-        boolean enabled = btManager.isRadioSilenceEnabled();
+        boolean enabled = isRadioSilenceEnabled();
         btnRadioSilence.setBackgroundTintList(null);
         GradientDrawable bg = buildVfoButtonBackground(
                 COLOR_PILL_BUTTON_PRIMARY,
@@ -10492,12 +10507,16 @@ public class UVProDropDownReceiver extends DropDownReceiver
             if (self != null && self instanceof com.atakmap.android.maps.PointMapItem) {
                 com.atakmap.coremap.maps.coords.GeoPoint gp =
                         ((com.atakmap.android.maps.PointMapItem) self).getPoint();
-                cotBridge.sendPositionOverRadio(
+                boolean sent = cotBridge.sendPositionOverRadio(
                         activeTx,
                         gp.getLatitude(), gp.getLongitude(),
                         gp.getAltitude(), 0, 0, -1);
-                appendLog("Manual beacon sent (" + transportLabelFor(activeTx) + " OPENRL)");
-                showActionToast("Beacon Sent");
+                if (sent) {
+                    appendLog("Manual beacon sent (" + transportLabelFor(activeTx) + " OPENRL)");
+                    showActionToast("Beacon Sent");
+                } else {
+                    appendLog("Manual beacon not sent — radio silence or transmit blocked");
+                }
             } else {
                 appendLog("Manual beacon not sent — no self-location available");
             }
@@ -10826,10 +10845,13 @@ public class UVProDropDownReceiver extends DropDownReceiver
                     com.uvpro.plugin.ax25.Ax25Frame frame =
                             com.uvpro.plugin.ax25.Ax25Frame
                                     .createUVProFrame(callsign, 0, packetBytes);
-                    activeTx.sendKissFrame(frame.encode());
-                    appendLog("Ping sent (" + transportLabelFor(activeTx) + ")");
-                    showActionToast("Ping Sent");
-                    rfSent = true;
+                    if (activeTx.sendKissFrame(frame.encode())) {
+                        appendLog("Ping sent (" + transportLabelFor(activeTx) + ")");
+                        showActionToast("Ping Sent");
+                        rfSent = true;
+                    } else {
+                        appendLog("Ping not sent — radio silence or transmit blocked");
+                    }
                 }
             } catch (Exception e) {
                 appendLog("Ping not sent — " + e.getMessage());
