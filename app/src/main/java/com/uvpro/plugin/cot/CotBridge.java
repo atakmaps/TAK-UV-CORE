@@ -40,6 +40,7 @@ import com.uvpro.plugin.bluetooth.MeshBtConnectionManager;
 import com.uvpro.plugin.chat.ChatBridge;
 import com.uvpro.plugin.crypto.EncryptionManager;
 import com.uvpro.plugin.chat.GeoChatContactListHelper;
+import com.uvpro.plugin.chat.GeoChatUnreadReconciler;
 import com.uvpro.plugin.chat.InboundGroupSyncApplier;
 import com.uvpro.plugin.protocol.RfSlottedCoTScheduler;
 import com.uvpro.plugin.protocol.RfTxArbitrator;
@@ -1736,6 +1737,15 @@ public class CotBridge {
             }
             if (!contactListUpdate) {
                 notifyInboundRfChat(event);
+            }
+            if ("b-t-f".equals(event.getType())) {
+                final String badgeConversation = GeoChatContactListHelper.isAllChatRoomsGeoChat(event)
+                        ? "All Chat Rooms"
+                        : inboundSenderUid;
+                if (badgeConversation != null && !badgeConversation.trim().isEmpty() && mapView != null) {
+                    mapView.post(() -> GeoChatUnreadReconciler.reconcileConversation(
+                            badgeConversation.trim()));
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "GeoChatService.onCotEvent failed, fallback dispatch", e);

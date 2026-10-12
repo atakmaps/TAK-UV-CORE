@@ -7,11 +7,13 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 - `feature/meshcore-firmware-out-path` and its stash are deleted. Do not recreate them.
 - Branch `feature/mesh-single-packet` from `main` @ `d2addf3`. Field-proven fallback `ab4c43c` (2026-10-12). Earlier rollback `ef3679a`. civDebug built and installed on both phones. Reload the plugin on each phone. Do not force-stop ATAK.
 - Mesh TX: a point is three single channel packets (127-byte cap), sent 2.5s apart. The ACK waits 3s so the last flood can finish, then holds the channel 2.5s so a GPS beacon cannot step on it. Mesh CoT retry is 20s. `path_len` stays `0xFF`. UV-PRO 240-byte split unchanged. Fallback: `ab4c43c`.
-- When a field log shows a delivery problem, fix it and tell Paul to reload and retest. Do not stop at the report.
+- Mesh channel-data commands are 5 header bytes plus the payload. A spare trailing zero used to split into the middle of a two-packet chat and cut off the last character.
 - Inbound unknown/neutral points keep their CoT type and callsign. Do not rewrite them to `b-m-p-s-p-i` / "Point".
 - Mesh RX still accepts old `UVAX1|` text. UV-PRO send path is unchanged. Mesh skips the 3-second CoT double-send.
 
 ## Next
+- When a field log shows a delivery problem, fix it and tell Paul to reload and retest. Do not stop at the report.
+- Contacts-icon badge: ATAK was counting every old chat row that never got a `readTime`. Reload, then the badge should show only messages not yet opened. Opening that chat clears it.
 - Paul reloads the plugin on both phones. Watch log `TX ATAK_DATA ... chunks=1`.
 - Radio silence long-press now sets both UV-PRO and MeshCore. Mesh air sends (channel data, channel text, DMs, CLI, room login, advert, node discover) return without transmitting. Ping and manual beacon only log “sent” when the radio accepted the frame.
 - Do not push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.

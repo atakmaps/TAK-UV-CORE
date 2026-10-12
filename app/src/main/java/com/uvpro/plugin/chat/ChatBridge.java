@@ -2215,6 +2215,17 @@ public class ChatBridge {
 
         registerAtakChatMessageListenerWhenReady(0);
 
+        if (mapView != null) {
+            mapView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (!disposed) {
+                        GeoChatUnreadReconciler.reconcileAll();
+                    }
+                }
+            }, 1500L);
+        }
+
         Log.d(TAG, "Outgoing chat relay started");
     }
 
@@ -2339,6 +2350,7 @@ public class ChatBridge {
         if (conversationId == null) return;
         pendingUnreadConversationUids.remove(conversationId);
         UVProContactHandler.clearUnread(conversationId);
+        GeoChatUnreadReconciler.markConversationRead(conversationId);
         if (pendingUnreadConversationUids.isEmpty()) {
             unreadVisibilityPollRunning = false;
         }

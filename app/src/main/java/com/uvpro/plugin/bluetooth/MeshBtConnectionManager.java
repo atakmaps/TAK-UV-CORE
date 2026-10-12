@@ -2743,7 +2743,10 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     private byte[] buildSendChannelDataCommand(int channel, int dataType, byte[] payload) {
         int payloadLen = payload != null ? payload.length : 0;
-        ByteBuffer buf = ByteBuffer.allocate(6 + payloadLen);
+        // Header is command, channel, flood path, and the uint16 data type.
+        // An unused trailing byte used to ride along and cut the last character
+        // off any chat that needed two channel packets.
+        ByteBuffer buf = ByteBuffer.allocate(5 + payloadLen);
         buf.order(ByteOrder.LITTLE_ENDIAN);
         buf.put(CMD_SEND_CHANNEL_DATA);
         buf.put((byte) Math.max(0, Math.min(7, channel)));
