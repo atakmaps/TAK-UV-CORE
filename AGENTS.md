@@ -26,7 +26,7 @@ Do not treat `README.md` or the files `docs/UV-PRO-*-HANDOFF.md` and `docs/UV-PR
 1. Read the constitution.
 2. Find the class in the "where a change goes" table in the developer guide. Chat, CoT, and routing changes go through the shared bridges and `TransmitTransportResolver`, not a UV-PRO-only branch.
 3. Leave the update-server trust chain alone unless the task is the trust chain. Order is `configureUpdateServerStatic` → `installUpdateServerTruststoreCompat` → `reloadCertificateManagerFromDatabase` → `registerUpdateServerCA` → deferred sync, and `UVProLifecycle` must call `applyUpdateServerTrustEarly`. Details are in the developer guide.
-4. Do not bump `ext.PLUGIN_VERSION`, tag a release, or publish to `atakmaps.com` unless the maintainer asked for a release.
+4. Do not bump `ext.PLUGIN_VERSION`, tag a release, or publish to `atakmaps.com` unless the maintainer asked for a release. When he says **bump version**, get local `main` ready for the submission agent: commit outstanding work, bump `ext.PLUGIN_VERSION`, commit it, fast-forward local `main`, and leave `git status` clean. Do not `git push` and do not build the submission zip. The submission agent packages that checkout. The signed APK is published later.
 5. Do not commit the ATAK SDK, tokens, phone serials, preference dumps, or logcats. The trust bundle `atakmaps-ca.p12` stays in git.
 
 ## Build
