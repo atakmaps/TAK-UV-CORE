@@ -14,6 +14,7 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 ## Next
 - When a field log shows a delivery problem, fix it and tell Paul to reload and retest. Do not stop at the report.
 - Contacts-icon badge: ATAK was counting every old chat row that never got a `readTime`. Reload, then the badge should show only messages not yet opened. Opening that chat clears it.
+- Repeater "new repeater discovered" toast skips pubkeys still in the 30-day repeater cache or already on the map. First sighting still toasts.
 - Paul reloads the plugin on both phones. Watch log `TX ATAK_DATA ... chunks=1`.
 - Radio silence long-press now sets both UV-PRO and MeshCore. Mesh air sends (channel data, channel text, DMs, CLI, room login, advert, node discover) return without transmitting. Ping and manual beacon only log “sent” when the radio accepted the frame.
 - Do not push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.

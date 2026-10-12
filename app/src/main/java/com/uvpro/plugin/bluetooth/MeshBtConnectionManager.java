@@ -3173,7 +3173,17 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         if (advert == null || context == null) {
             return;
         }
-        String dedupKey = advert.pubKeyHex + ":" + advert.advertTimestampSec;
+        // Repeaters stay on the map for their cache TTL. The old key included the
+        // advert timestamp and lived only in this process, so every reboot toasted
+        // "new repeater" for ones already saved.
+        if (com.uvpro.plugin.UVProMapComponent.isKnownMeshRepeater(advert.pubKeyHex)) {
+            return;
+        }
+        String dedupKey = advert.pubKeyHex != null
+                ? advert.pubKeyHex.trim().toUpperCase(java.util.Locale.US) : "";
+        if (dedupKey.isEmpty()) {
+            return;
+        }
         Long previous = repeaterToastDedupByPubKeyTs.putIfAbsent(dedupKey, advert.advertTimestampSec);
         if (previous != null) {
             return;
