@@ -1,11 +1,11 @@
 ---
-description: When Paul says bump version, leave local main ready for the submission agent
+description: When Paul says bump version, leave GitHub main ready for the submission agent
 alwaysApply: true
 ---
 
 # Bump version
 
-When Paul says **bump version**, get local `main` ready for the submission agent. Do not ask him to merge, push, or pick a branch.
+When Paul says **bump version**, get `main` ready for the submission agent. Do not ask him to merge or pick a branch.
 
 Ready means all of this is true:
 
@@ -13,7 +13,8 @@ Ready means all of this is true:
 - `ext.PLUGIN_VERSION` in root `build.gradle` is the next version, committed. If the current number already has a `vX.Y.Z` tag or was already submitted, increment the patch (`2.0.19` → `2.0.20`). If he names a version, use that. Commit message: `Bump PLUGIN_VERSION to X.Y.Z for TAK submission.`
 - Local `main` is checked out at that commit. Fast-forward `main` if the work was on another branch.
 - `git status` is clean.
+- Source is pushed to GitHub `origin/main`. This repo is public. That push is the open-source code, not the plugin users install.
 
 Then stop and tell him the version and the commit. The submission agent packages this checkout and sends it to TAC.
 
-Do not `git push`. Do not run `package-submission.sh`. Do not open a pull request. The signed APK that TAC returns is published later (`signed-plugin-release-cloud.mdc`).
+Do not run `package-submission.sh`. Do not open a pull request. Do not upload an APK. The signed APK that TAC returns is what gets published to the update server later (`signed-plugin-release-cloud.mdc`).
