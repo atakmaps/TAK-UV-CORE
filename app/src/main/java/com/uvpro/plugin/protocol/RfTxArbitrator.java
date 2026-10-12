@@ -47,6 +47,19 @@ public final class RfTxArbitrator {
 
     /** True when an APRS beacon should be skipped this cycle. */
     public boolean shouldDeferAprsBeacon() {
+        return channelBusy();
+    }
+
+    /** Milliseconds until mesh OPENRL traffic should stay off the channel. 0 means clear. */
+    public long millisUntilOpenRlClear() {
+        if (openRlTxInFlight || pingReplyPending || slottedTxPending) {
+            return 500L;
+        }
+        long remain = openRlGuardUntilMs - System.currentTimeMillis();
+        return remain > 0 ? remain : 0L;
+    }
+
+    private boolean channelBusy() {
         if (openRlTxInFlight) {
             return true;
         }
@@ -63,8 +76,7 @@ public final class RfTxArbitrator {
      * Compact chat ACKs should not key during an in-flight group CoT or slotted OPENRL window.
      */
     public boolean shouldDeferRfChatAck() {
-        return openRlTxInFlight || pingReplyPending || slottedTxPending
-                || System.currentTimeMillis() < openRlGuardUntilMs;
+        return channelBusy();
     }
 
     /**

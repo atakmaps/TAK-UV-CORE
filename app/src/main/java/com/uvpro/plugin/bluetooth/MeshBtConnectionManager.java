@@ -137,10 +137,11 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     private static final int MAX_MESH_MESSAGE_LEN = 130;
     /**
-     * Channel-data bytes per LoRa packet. Firmware can take 165, but a 165-byte
-     * first chunk never arrived on the other radio. Packets near 100 bytes did.
+     * Channel-data bytes per LoRa packet. Firmware accepts 165, but a 165-byte
+     * chunk never arrived. 100-byte packets did, and five of those sent at once
+     * dropped a piece. 127 keeps a 308-byte point to three single packets.
      */
-    private static final int MESH_GROUP_DATA_MAX = 100;
+    private static final int MESH_GROUP_DATA_MAX = 127;
     /** One AX.25 frame in a single channel-data payload. */
     private static final int MESH_AX25_SINGLE = 0xB1;
     /** AX.25 slice when the frame is larger than one LoRa packet. */
