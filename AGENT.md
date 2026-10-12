@@ -19,7 +19,7 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 - Map Send Message on a MeshCore contact toasts: "If recipient does not have you as a favorite, your message will not be delivered." The chat still opens.
 - Paul reloads the plugin on both phones. Watch log `TX ATAK_DATA ... chunks=1`.
 - Radio silence long-press now sets both UV-PRO and MeshCore. Mesh air sends (channel data, channel text, DMs, CLI, room login, advert, node discover) return without transmitting. Ping and manual beacon only log “sent” when the radio accepted the frame.
-- "Bump version" means leave `main` ready for the submission agent: work committed, `PLUGIN_VERSION` raised and committed, checkout clean, source pushed to GitHub `origin/main`. That push is the public code. Do not build the zip and do not upload an APK. The signed APK goes to the update server later.
+- "Bump version" means leave `main` ready for the submission agent: work committed, `PLUGIN_VERSION` raised and committed, checkout clean, source on GitHub. If `main` is protected, open a pull request and give Paul the link. That is the public code. Do not build the zip and do not upload an APK. The signed APK goes to the update server later.
 - Do not field-test `feature/meshcore-stock-routing`.
 
 ## Last user commit

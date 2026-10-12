@@ -13,7 +13,7 @@ Ready means all of this is true:
 - `ext.PLUGIN_VERSION` in root `build.gradle` is the next version, committed. If the current number already has a `vX.Y.Z` tag or was already submitted, increment the patch (`2.0.19` → `2.0.20`). If he names a version, use that. Commit message: `Bump PLUGIN_VERSION to X.Y.Z for TAK submission.`
 - Local `main` is checked out at that commit. Fast-forward `main` if the work was on another branch.
 - `git status` is clean.
-- Source is pushed to GitHub `origin/main`. This repo is public. That push is the open-source code, not the plugin users install.
+- Source is on GitHub. This repo is public. Push `origin/main` when GitHub accepts it. When `main` is protected, push the same commits on a branch and open a pull request into `main`, then give Paul the link to merge. Do not turn off branch protection unless he asks. That push is the open-source code, not the plugin users install.
 
 Then stop and tell him the version and the commit. The submission agent packages this checkout and sends it to TAC.
 
