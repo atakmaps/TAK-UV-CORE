@@ -5,14 +5,17 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 
 ## Done
 - `feature/meshcore-firmware-out-path` and its stash are deleted. Do not recreate them.
-- Branch `feature/mesh-single-packet` from `main` @ `d2addf3`. Uncommitted. civDebug built and installed on both phones 2026-10-12. Reload the plugin on each phone. Do not force-stop ATAK.
+- Branch `feature/mesh-single-packet` from `main` @ `d2addf3`. Rollback point `ef3679a` (2026-10-12). civDebug built and installed on both phones. Reload the plugin on each phone. Do not force-stop ATAK.
 - Mesh TX: channel payload capped at 100 bytes. CoT is split so each piece is one channel packet (`chunks=1`). A 3-chunk join arrived at the right length and failed gzip. `path_len` stays `0xFF`. UV-PRO 240-byte split unchanged.
 - Mesh RX still accepts old `UVAX1|` text. UV-PRO send path is unchanged. Mesh skips the 3-second CoT double-send.
 
 ## Next
 - Paul reloads the plugin on both phones. Watch log `TX ATAK_DATA ... chunks=1`.
 - Radio silence long-press now sets both UV-PRO and MeshCore. Mesh air sends (channel data, channel text, DMs, CLI, room login, advert, node discover) return without transmitting. Ping and manual beacon only log “sent” when the radio accepted the frame.
-- Do not commit or push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.
+- Do not push unless Paul asks. Do not field-test `feature/meshcore-stock-routing`.
+
+## Last user commit
+Last user commit (Darksteal): ef3679a — Oct 12 — "commit all changes for now so we can roll back if your next fix doesnt work"
 
 ## Pointers
 - Synced handoff: `~/dev/agent-handoffs/Darksteal-MeshCore-Stock-Routing.md`
