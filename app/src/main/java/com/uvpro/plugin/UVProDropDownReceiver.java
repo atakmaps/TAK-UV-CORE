@@ -1026,15 +1026,115 @@ public class UVProDropDownReceiver extends DropDownReceiver
         }
         if (SHOW_PLUGIN.equals(action) || SHOW_PLUGIN_CHANNEL_CONTROL.equals(action)) {
             pendingOpenToChannelControl = SHOW_PLUGIN_CHANNEL_CONTROL.equals(action);
-            showDropDown(createView(),
-                    HALF_WIDTH, FULL_HEIGHT,
-                    FULL_WIDTH, HALF_HEIGHT,
-                    false, this);
-            if (pendingOpenToChannelControl) {
-                // Some ATAK builds do not reliably fire onDropDownVisible on first open.
-                scheduleScrollToRepeaterLoadSection();
+            if (!com.uvpro.plugin.ui.RadioProfile.isChosen(getMapView().getContext())) {
+                showRadioProfileChooser();
+                return;
+            }
+            openPluginPanel();
+        }
+    }
+
+    /** First plugin load asks before any panel is opened. Retries until the map window exists. */
+    public void promptForRadioProfileIfNeeded() {
+        MapView mv = getMapView();
+        Context ctx = mv != null ? mv.getContext() : null;
+        if (com.uvpro.plugin.ui.RadioProfile.isChosen(ctx)) {
+            Log.i(TAG, "Radio profile already "
+                    + com.uvpro.plugin.ui.RadioProfile.label(
+                    com.uvpro.plugin.ui.RadioProfile.read(ctx)));
+            return;
+        }
+        if (radioProfileChooser != null && radioProfileChooser.isShowing()) {
+            return;
+        }
+        if (!(ctx instanceof android.app.Activity)) {
+            Log.i(TAG, "Radio profile chooser waiting for the map window");
+            if (mv != null && radioProfilePromptAttempts++ < 8) {
+                mv.postDelayed(this::promptForRadioProfileIfNeeded, 2000);
+            }
+            return;
+        }
+        try {
+            showRadioProfileChooser();
+            Log.i(TAG, "Radio profile chooser shown");
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Radio profile chooser not ready", e);
+            if (mv != null && radioProfilePromptAttempts++ < 8) {
+                mv.postDelayed(this::promptForRadioProfileIfNeeded, 2000);
             }
         }
+    }
+
+    private AlertDialog radioProfileChooser;
+    private int radioProfilePromptAttempts;
+
+    private void openPluginPanel() {
+        showDropDown(createView(),
+                HALF_WIDTH, FULL_HEIGHT,
+                FULL_WIDTH, HALF_HEIGHT,
+                false, this);
+        if (pendingOpenToChannelControl) {
+            // Some ATAK builds do not reliably fire onDropDownVisible on first open.
+            scheduleScrollToRepeaterLoadSection();
+        }
+    }
+
+    private void showRadioProfileChooser() {
+        if (radioProfileChooser != null && radioProfileChooser.isShowing()) {
+            return;
+        }
+        Context ctx = getMapView() != null ? getMapView().getContext() : null;
+        if (ctx == null) {
+            openPluginPanel();
+            return;
+        }
+        LinearLayout choices = new LinearLayout(ctx);
+        choices.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * ctx.getResources().getDisplayMetrics().density);
+        choices.setPadding(pad, pad, pad, pad / 2);
+
+        TextView hint = new TextView(ctx);
+        hint.setText("You can change this later under Plugin Settings, Radios.");
+        hint.setTextColor(0xFFFFFFFF);
+        hint.setTextSize(14);
+        choices.addView(hint);
+
+        String[] labels = {"MeshCore", "UV-PRO", "Both"};
+        String[] values = {
+                com.uvpro.plugin.ui.RadioProfile.MESH,
+                com.uvpro.plugin.ui.RadioProfile.UVPRO,
+                com.uvpro.plugin.ui.RadioProfile.BOTH
+        };
+        for (int i = 0; i < labels.length; i++) {
+            Button choice = new Button(ctx);
+            choice.setText(labels[i]);
+            choice.setTextColor(0xFF000000);
+            choice.setAllCaps(false);
+            choice.setTextSize(16);
+            choice.setBackgroundColor(0xFFFFEB3B);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = pad / 2;
+            choice.setLayoutParams(lp);
+            final String value = values[i];
+            choice.setOnClickListener(v -> {
+                com.uvpro.plugin.ui.RadioProfile.write(ctx, value);
+                com.uvpro.plugin.ui.RadioProfile.applyMapIcons(pluginContext);
+                if (radioProfileChooser != null) {
+                    radioProfileChooser.dismiss();
+                }
+                openPluginPanel();
+            });
+            choices.addView(choice);
+        }
+
+        radioProfileChooser = new AlertDialog.Builder(ctx)
+                .setTitle("Which radios should this plugin show?")
+                .setView(choices)
+                .setCancelable(false)
+                .create();
+        radioProfileChooser.show();
     }
 
     /**
@@ -1151,6 +1251,8 @@ public class UVProDropDownReceiver extends DropDownReceiver
         refreshLogView();
         appendConnectionStatusLog("Plugin panel opened");
         registerBeaconSettingsReceiver();
+        com.uvpro.plugin.ui.RadioProfile.applyPanel(rootView, getMapView().getContext());
+        com.uvpro.plugin.ui.RadioProfile.setOpenPanel(rootView);
         return rootView;
     }
 
@@ -8441,10 +8543,13 @@ public class UVProDropDownReceiver extends DropDownReceiver
 
     /** One button covers both radios. Each manager keeps its own flag. */
     private void setRadioSilenceOnBothTransports(boolean enabled) {
-        if (btManager != null) {
+        android.content.Context atak = getMapView() != null ? getMapView().getContext() : null;
+        if (btManager != null && com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, atak)) {
             btManager.setRadioSilenceEnabled(enabled);
         }
-        if (meshBtManager != null) {
+        if (meshBtManager != null && com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, atak)) {
             meshBtManager.setRadioSilenceEnabled(enabled);
         }
     }
@@ -10885,6 +10990,7 @@ public class UVProDropDownReceiver extends DropDownReceiver
 
     @Override
     public void onDropDownClose() {
+        com.uvpro.plugin.ui.RadioProfile.setOpenPanel(null);
         if (getMapView() != null) {
             getMapView().removeCallbacks(meshQueuedStatusTimeoutRunnable);
             getMapView().removeCallbacks(meshCallsignPositionSyncRunnable);

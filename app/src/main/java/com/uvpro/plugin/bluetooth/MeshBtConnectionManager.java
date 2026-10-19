@@ -605,6 +605,11 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     }
 
     public void startScan() {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, null)) {
+            Log.i(TAG, "Scan skipped: MeshCore hidden by radio profile");
+            return;
+        }
         prepareForUserScan();
         if (btAdapter == null) {
             finishScanWithError("Bluetooth not available on this device");
@@ -889,6 +894,11 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     /** Called from picker row taps — sets userInitiatedConnect flag and ends picker session. */
     public void connectUserSelected(BluetoothDevice device) {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, null)) {
+            Log.i(TAG, "Connect skipped: MeshCore hidden by radio profile");
+            return;
+        }
         meshManualDisconnect.set(false);
         userInitiatedConnect.set(true);
         endScanPickerSession();
@@ -899,6 +909,11 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     }
 
     private void connectInternal(BluetoothDevice device) {
+        if (!meshAirAllowed()) {
+            Log.i(TAG, "Connect skipped: MeshCore hidden by radio profile");
+            connecting.set(false);
+            return;
+        }
         if (device == null) return;
         if (scanPickerSessionActive.get() && !userInitiatedConnect.get()) {
             Log.i(TAG, "connectInternal blocked during scan/picker session");
@@ -1239,11 +1254,19 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     /** Probe the saved target and connect if available. */
     public void tryAutoConnectToSavedTarget() {
+        if (!meshAirAllowed()) {
+            Log.i(TAG, "Boot auto-connect skipped: MeshCore hidden by radio profile");
+            return;
+        }
         autoConnectToSavedTargetInternal("Boot auto-connect", true, true);
     }
 
     /** After UV-PRO connects at boot — may run even if the 7s fallback already probed once. */
     public void tryAutoConnectAfterRadioConnect() {
+        if (!meshAirAllowed()) {
+            Log.i(TAG, "Post-radio auto-connect skipped: MeshCore hidden by radio profile");
+            return;
+        }
         autoConnectToSavedTargetInternal("Post-radio auto-connect", false, true);
     }
 
@@ -1628,11 +1651,20 @@ public class MeshBtConnectionManager extends BtConnectionManager {
 
     /** Air sends stop. Companion reads and local radio settings stay allowed. */
     private boolean blockedByRadioSilence() {
+        if (!meshAirAllowed()) {
+            Log.i(TAG, "TX blocked: MeshCore hidden by radio profile");
+            return true;
+        }
         if (!radioSilenceEnabled.get()) {
             return false;
         }
         Log.w(TAG, "TX blocked by Radio Silence");
         return true;
+    }
+
+    private static boolean meshAirAllowed() {
+        return com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, null);
     }
 
     @Override

@@ -20,6 +20,7 @@ Mesh ATAK traffic stays a flood on channel 7 (`ATAK_DATA`). Cut dropped deliveri
 - Paul reloads the plugin on both phones. Watch log `TX ATAK_DATA ... chunks=1`.
 - Radio silence long-press now sets both UV-PRO and MeshCore. Mesh air sends (channel data, channel text, DMs, CLI, room login, advert, node discover) return without transmitting. Ping and manual beacon only log “sent” when the radio accepted the frame.
 - "Bump version" means leave `main` ready for the submission agent: work committed, `PLUGIN_VERSION` raised and committed, checkout clean, source on GitHub. If `main` is protected, open a pull request and give Paul the link. That is the public code. Do not build the zip and do not upload an APK. The signed APK goes to the update server later.
+- Radio choice is on `feature/radio-profile` (not committed). First plugin open asks MeshCore, UV-PRO, or Both. Plugin Settings → Radios changes it. A hidden radio does not scan, connect, or transmit. Mesh markers leave the map and the cache stays. APRS dots and trails hide with UV-PRO and come back when it is shown. Radio silence applies only to the radios still shown. Not installed.
 - Do not field-test `feature/meshcore-stock-routing`.
 
 ## Last user commit

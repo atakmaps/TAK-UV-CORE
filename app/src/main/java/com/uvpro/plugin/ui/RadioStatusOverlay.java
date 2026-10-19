@@ -76,6 +76,10 @@ public class RadioStatusOverlay extends MarkerIconWidget implements MapWidget.On
         }
     }
 
+    public static boolean isInstalled() {
+        return instance != null;
+    }
+
     public static void install(Context pluginContext) {
         MapView mv = MapView.getMapView();
         if (mv == null) { Log.e(TAG, "install: MapView null"); return; }

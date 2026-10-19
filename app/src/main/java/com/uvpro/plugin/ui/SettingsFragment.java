@@ -321,6 +321,7 @@ public class SettingsFragment extends PluginPreferenceFragment
         wireAprsPreferences();
         wireAdministrationPreferences();
         wirePersistentPreferenceWriters();
+        applyRadioProfilePreferences();
     }
 
     /** Ensure Pan* widgets persist into ATAK SharedPreferences when the user saves. */
@@ -339,6 +340,7 @@ public class SettingsFragment extends PluginPreferenceFragment
         wireEditTextPreference(SmartBeacon.KEY_TURN_SLOPE, false);
 
         wireListPreference(PREF_BEACON_INTERVAL);
+        wireListPreference(RadioProfile.PREF);
         wireListPreference(PREF_RETRY_INTERVAL_MIN);
         wireListPreference(PREF_RETRY_MAX);
         wireListPreference(PREF_APRS_SSID);
@@ -484,6 +486,11 @@ public class SettingsFragment extends PluginPreferenceFragment
         }
         if (PREF_SA_RELAY_ENABLED.equals(key)) {
             updateDependentPreferences();
+        }
+        if (RadioProfile.PREF.equals(key)) {
+            applyRadioProfilePreferences();
+            RadioProfile.applyMapIcons(staticPluginContext);
+            RadioProfile.refreshOpenPanel();
         }
         updateSummaries();
         ListView list = getPreferenceListView();
@@ -2923,6 +2930,11 @@ public class SettingsFragment extends PluginPreferenceFragment
             com.uvpro.plugin.protocol.UVProRadioServices.syncEncryptionFromSettings(
                     resolveSettingsContext());
         }
+        if (RadioProfile.PREF.equals(key)) {
+            applyRadioProfilePreferences();
+            RadioProfile.applyMapIcons(staticPluginContext);
+            RadioProfile.refreshOpenPanel();
+        }
         updateSummaries();
         ListView list = getPreferenceListView();
         if (list != null) {
@@ -3499,11 +3511,36 @@ public class SettingsFragment extends PluginPreferenceFragment
                 .apply();
     }
 
+    private void applyRadioProfilePreferences() {
+        Context ctx = resolveSettingsContext();
+        setPreferenceShown(findPreference(KEY_CAT_APRS),
+                RadioProfile.shows(RadioSurfaceCatalog.Role.UVPRO, ctx));
+        setPreferenceShown(findPreference(PREF_DISABLE_MESH_BEACON_LIMITING),
+                RadioProfile.shows(RadioSurfaceCatalog.Role.MESH, ctx));
+    }
+
+    /** android.preference.Preference on the ATAK compile stub has no setVisible. */
+    private static void setPreferenceShown(Preference pref, boolean shown) {
+        if (pref == null) {
+            return;
+        }
+        try {
+            pref.getClass().getMethod("setVisible", boolean.class).invoke(pref, shown);
+        } catch (Exception e) {
+            android.util.Log.w("UVPro.Settings",
+                    "Could not hide preference " + pref.getKey(), e);
+        }
+    }
+
     private void updateSummaries() {
         SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
         Context ctx = MapView.getMapView() != null
                 ? MapView.getMapView().getContext()
                 : staticPluginContext;
+
+        setSummaryWithValue(RadioProfile.PREF,
+                "Which radio controls are shown. Hidden radios can be turned back on here.",
+                RadioProfile.label(RadioProfile.read(ctx)));
 
         Preference beaconPref = findPreference(PREF_BEACON_INTERVAL);
         if (beaconPref != null) {

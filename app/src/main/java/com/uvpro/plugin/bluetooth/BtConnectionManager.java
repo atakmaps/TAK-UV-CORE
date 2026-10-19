@@ -240,6 +240,11 @@ public class BtConnectionManager {
      * No-op when already connected, no remembered MAC, or boot auto-connect already ran.
      */
     public void scheduleBootAutoConnect() {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null)) {
+            Log.i(TAG, "Boot auto-connect skipped: UV-PRO hidden by radio profile");
+            return;
+        }
         if (!bootAutoConnectScheduled.compareAndSet(false, true)) {
             return;
         }
@@ -410,6 +415,11 @@ public class BtConnectionManager {
      * Emits bonded matches immediately, then Classic discovery for unbonded adverts.
      */
     public void startScan() {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null)) {
+            Log.i(TAG, "Scan skipped: UV-PRO hidden by radio profile");
+            return;
+        }
         if (btAdapter == null) {
             notifyError("Bluetooth not available on this device");
             return;
@@ -696,6 +706,11 @@ public class BtConnectionManager {
      * Unbonded devices trigger the system pairing dialog via {@link BluetoothDevice#createBond()}.
      */
     public void connect(BluetoothDevice device) {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null)) {
+            Log.i(TAG, "Connect skipped: UV-PRO hidden by radio profile");
+            return;
+        }
         if (device == null) {
             notifyError("Invalid Bluetooth device");
             return;
@@ -937,6 +952,11 @@ public class BtConnectionManager {
     }
 
     public boolean sendKissFrame(byte[] ax25Frame) {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null)) {
+            Log.i(TAG, "TX blocked: UV-PRO hidden by radio profile");
+            return false;
+        }
         if (!connected.get() || outputStream == null) {
             Log.w(TAG, "Cannot send: not connected");
             return false;

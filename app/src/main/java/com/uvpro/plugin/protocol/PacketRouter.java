@@ -392,6 +392,10 @@ public class PacketRouter {
      */
     private void routeAprsPacket(String callsign, int ssid, String info, byte[] infoBytes,
                                  String destCallsign, int unwrapDepth) {
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null)) {
+            return;
+        }
         if (info.isEmpty()) {
             return;
         }

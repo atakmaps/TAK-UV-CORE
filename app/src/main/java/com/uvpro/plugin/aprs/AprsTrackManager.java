@@ -82,6 +82,23 @@ public class AprsTrackManager {
         mapView.post(() -> applyTrailOnUiThread(snapshot));
     }
 
+    /** Show or hide the trail group. Points stay in memory. */
+    public void setTracksVisible(boolean visible) {
+        if (mapView == null) {
+            return;
+        }
+        mapView.post(() -> {
+            MapGroup root = mapView.getRootGroup();
+            if (root == null) {
+                return;
+            }
+            MapGroup found = root.findMapGroup(TRACK_GROUP_NAME);
+            if (found != null) {
+                found.setVisible(visible);
+            }
+        });
+    }
+
     public void removeTrack(String markerUid) {
         if (markerUid == null) {
             return;

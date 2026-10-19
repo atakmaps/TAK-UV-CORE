@@ -79,6 +79,10 @@ public class AprsDetailsDropDownReceiver extends DropDownReceiver
         if (!SHOW_APRS_DETAILS.equals(action)) {
             return;
         }
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, getMapView().getContext())) {
+            return;
+        }
 
         MapItem item = getMapView().getRootGroup().deepFindUID(uid);
         if (item == null || !CotBridge.isUvproAprsMarker(item)) {
