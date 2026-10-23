@@ -1578,6 +1578,43 @@ public class CotBridge {
         });
     }
 
+    /**
+     * UV-PRO senders send a second copy about 3 s after the first, and the radio is half duplex.
+     * An ACK keyed straight after copy 1 landed on top of copy 2 and was lost, which cost a 15 s
+     * retry. The ACK now waits until the channel has been quiet for the OPENRL guard.
+     */
+    private static final long UVPRO_COT_ACK_FIRST_DELAY_MS = 300L;
+    private static final long UVPRO_COT_ACK_POLL_MS = 400L;
+    private static final int UVPRO_COT_ACK_MAX_DEFERS = 24;
+    private final Set<String> pendingUvproCotAcks = ConcurrentHashMap.newKeySet();
+
+    private void scheduleQuietCotAck(BtConnectionManager tx, byte[] ax25, String uid, int defers) {
+        if (defers == 0 && !pendingUvproCotAcks.add(uid)) {
+            Log.d(TAG, "CoT ACK already queued uid=" + uid);
+            return;
+        }
+        long delay = defers == 0 ? UVPRO_COT_ACK_FIRST_DELAY_MS : UVPRO_COT_ACK_POLL_MS;
+        cotRetryExecutor.schedule(() -> {
+            try {
+                if (!tx.isConnected()) {
+                    pendingUvproCotAcks.remove(uid);
+                    return;
+                }
+                if (RfTxArbitrator.get().shouldDeferRfChatAck()
+                        && defers < UVPRO_COT_ACK_MAX_DEFERS) {
+                    scheduleQuietCotAck(tx, ax25, uid, defers + 1);
+                    return;
+                }
+                pendingUvproCotAcks.remove(uid);
+                tx.sendKissFrame(ax25);
+                Log.d(TAG, "CoT ACK sent uid=" + uid + " after " + defers + " channel waits");
+            } catch (Exception e) {
+                pendingUvproCotAcks.remove(uid);
+                Log.w(TAG, "Failed to send CoT ACK uid=" + uid, e);
+            }
+        }, delay, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
     private static final long INBOUND_COT_DUPLICATE_WINDOW_MS = 120_000L;
     private final java.util.concurrent.ConcurrentHashMap<String, Long> recentInboundCotByUid =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -1710,8 +1747,7 @@ public class CotBridge {
                         }
                     }, MESH_COT_ACK_QUIET_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } else {
-                    ackTx.sendKissFrame(ax25);
-                    Log.d(TAG, "CoT ACK sent uid=" + ackUid.trim());
+                    scheduleQuietCotAck(ackTx, ax25, ackUid.trim(), 0);
                 }
             }
         } catch (Exception e) {
