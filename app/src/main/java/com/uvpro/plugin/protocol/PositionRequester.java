@@ -141,6 +141,11 @@ public final class PositionRequester {
         if (meshContact && mesh != null && mesh.isConnected()) {
             return mesh;
         }
+        Context ctx = resolveContext(null);
+        if (ctx != null && SettingsFragment.isMeshTransmitEnabled(ctx)
+                && mesh != null && mesh.isConnected()) {
+            return mesh;
+        }
         if (uv != null && uv.isConnected()) {
             return uv;
         }
