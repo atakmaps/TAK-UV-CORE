@@ -434,6 +434,12 @@ public class UVProDropDownReceiver extends DropDownReceiver
     }
     private PreferredTransmitTransport preferredTransmitTransport = PreferredTransmitTransport.NONE;
     private boolean transmitFailoverActive = false;
+    /**
+     * True once the user chose a transmit radio or both radios were up this session. Until then the
+     * shown selection may only be a connectivity default, so a late-connecting second radio must
+     * not replace it with the stored last-session preference.
+     */
+    private boolean transmitSelectionConfirmed = false;
     private static final long TRANSMIT_FAILOVER_DELAY_MS = 5 * 60 * 1000L;
     private Runnable transmitFailoverRunnable = null;
     /** Boot-only window for connection-driven transmit defaults; closed after mesh boot resolves. */
@@ -6750,6 +6756,27 @@ public class UVProDropDownReceiver extends DropDownReceiver
         boolean meshUp = meshConnected;
 
         if (uvUp && meshUp) {
+            boolean keepShownSelection = !startupContext && !transmitFailoverActive
+                    && !transmitSelectionConfirmed
+                    && meshTransmitEnabled != uvproTransmitEnabled;
+            transmitSelectionConfirmed = true;
+            if (keepShownSelection) {
+                // The second radio connected mid-session while connectivity had forced the shown
+                // selection. Keep what is shown instead of jumping to the stale last-session
+                // preference.
+                preferredTransmitTransport = meshTransmitEnabled
+                        ? PreferredTransmitTransport.MESH
+                        : PreferredTransmitTransport.UVPRO;
+                persistPreferredTransmitTransport();
+                persistTransmitTogglePreferences();
+                syncTransmitSwitchesUi();
+                applyActiveTransmitTransport();
+                if (logChange) {
+                    appendLog("Transmit: both radios connected — keeping "
+                            + formatPreferredTransmitLabel());
+                }
+                return;
+            }
             applyTogglesFromPreferredTransport();
             transmitFailoverActive = false;
             cancelTransmitFailoverTimer();
@@ -7112,6 +7139,7 @@ public class UVProDropDownReceiver extends DropDownReceiver
             uvOn = uvproTransmitEnabled;
         }
         if (userPreferenceChange) {
+            transmitSelectionConfirmed = true;
             cancelTransmitFailoverTimer();
             transmitFailoverActive = false;
             preferredTransmitTransport = meshOn
