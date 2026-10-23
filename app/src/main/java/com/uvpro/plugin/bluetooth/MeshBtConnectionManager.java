@@ -144,6 +144,13 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     private static final int MESH_GROUP_DATA_MAX = 127;
     /** One AX.25 frame in a single channel-data payload. */
     private static final int MESH_AX25_SINGLE = 0xB1;
+    /**
+     * One AX.25 frame plus a uint16 nonce. Group-data ciphertext has no timestamp, so an
+     * identical frame (a repeated ping or an unchanged beacon) is byte-identical on air and
+     * the receiving node drops it as a duplicate. The nonce makes each send unique.
+     */
+    private static final int MESH_AX25_SINGLE_NONCE = 0xB3;
+    private static final int MESH_AX25_SINGLE_NONCE_HEADER = 3;
     /** AX.25 slice when the frame is larger than one LoRa packet. */
     private static final int MESH_AX25_PART = 0xB2;
     /** marker + uint16 id + seq + total */
@@ -176,7 +183,8 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     private final AtomicBoolean scanCompleteNotified = new AtomicBoolean(false);
     private final Set<String> seenScanAddresses = new HashSet<>();
     private final AtomicLong lastIoActivityMs = new AtomicLong(0L);
-    private final AtomicInteger outboundMsgId = new AtomicInteger(1);
+    private final AtomicInteger outboundMsgId =
+            new AtomicInteger(1 + new java.util.Random().nextInt(0xFFFE));
 
     /** True while the Scan & Connect picker is open. */
     private final AtomicBoolean scanPickerSessionActive = new AtomicBoolean(false);
@@ -1567,6 +1575,15 @@ public class MeshBtConnectionManager extends BtConnectionManager {
      * {@code 0xB2} plus id, seq, total, and a raw slice. Channel path stays flood.
      */
     private int sendAx25EnvelopeChunks(int channel, int msgId, byte[] ax25Frame) {
+        if (ax25Frame.length <= MESH_GROUP_DATA_MAX - MESH_AX25_SINGLE_NONCE_HEADER) {
+            byte[] payload = new byte[MESH_AX25_SINGLE_NONCE_HEADER + ax25Frame.length];
+            payload[0] = (byte) MESH_AX25_SINGLE_NONCE;
+            payload[1] = (byte) (msgId & 0xFF);
+            payload[2] = (byte) ((msgId >> 8) & 0xFF);
+            System.arraycopy(ax25Frame, 0, payload, MESH_AX25_SINGLE_NONCE_HEADER, ax25Frame.length);
+            enqueueCommand(buildSendChannelDataCommand(channel, ATAK_DATA_TYPE_AX25, payload));
+            return 1;
+        }
         if (ax25Frame.length <= MESH_GROUP_DATA_MAX - 1) {
             byte[] payload = new byte[1 + ax25Frame.length];
             payload[0] = (byte) MESH_AX25_SINGLE;
@@ -1602,7 +1619,7 @@ public class MeshBtConnectionManager extends BtConnectionManager {
      * arrived at the right length and then failed gzip.
      */
     public int maxUvproPayloadForSinglePacket() {
-        return (MESH_GROUP_DATA_MAX - 1) - 16 - 3;
+        return (MESH_GROUP_DATA_MAX - MESH_AX25_SINGLE_NONCE_HEADER) - 16 - 3;
     }
 
     private static final long[] INCOMPLETE_CHUNK_DRAIN_DELAYS_MS = {25L, 100L, 300L};
@@ -3526,7 +3543,8 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         }
         byte[] raw = Arrays.copyOfRange(pkt, 9, 9 + copyLen);
         int marker = raw[0] & 0xFF;
-        if (marker == MESH_AX25_SINGLE || marker == MESH_AX25_PART) {
+        if (marker == MESH_AX25_SINGLE || marker == MESH_AX25_SINGLE_NONCE
+                || marker == MESH_AX25_PART) {
             int pathLen = pkt[5] & 0xFF;
             if (pathLen == 0xFF) {
                 pathLen = 0;
@@ -3553,6 +3571,13 @@ public class MeshBtConnectionManager extends BtConnectionManager {
         int marker = payload[0] & 0xFF;
         if (marker == MESH_AX25_SINGLE) {
             deliverAssembledAx25(Arrays.copyOfRange(payload, 1, payload.length), pathLen);
+            return;
+        }
+        if (marker == MESH_AX25_SINGLE_NONCE) {
+            if (payload.length > MESH_AX25_SINGLE_NONCE_HEADER) {
+                deliverAssembledAx25(Arrays.copyOfRange(
+                        payload, MESH_AX25_SINGLE_NONCE_HEADER, payload.length), pathLen);
+            }
             return;
         }
         if (marker != MESH_AX25_PART || payload.length <= MESH_AX25_PART_HEADER) {
