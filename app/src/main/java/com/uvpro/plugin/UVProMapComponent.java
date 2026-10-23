@@ -175,6 +175,9 @@ public class UVProMapComponent extends DropDownMapComponent {
     private Handler beaconHandler;
     private Runnable beaconRunnable;
     private volatile boolean beaconTimerArmed;
+    private long lastBeaconCycleMs;
+    private boolean beaconCycleMeshLimited;
+    private boolean beaconCycleScheduled;
     private static final long BEACON_TIMER_ERROR_RETRY_MS = 60_000L;
     private Runnable beaconWaitForPositionRunnable;
     private boolean forceFirstPostConnectBeacon = false;
@@ -669,6 +672,7 @@ try {
                     } else if (ACTION_BEACON_TRANSPORT_CHANGED.equals(i.getAction())) {
                         Log.d(TAG, "Beacon transport changed — updating CotBridge/ChatBridge");
                         applyActiveTransmitTransportFromPreference();
+                        rescheduleBeaconForTransmitChange();
                     }
                 }
             };
@@ -2503,6 +2507,9 @@ try {
                     nextMs = BEACON_TIMER_ERROR_RETRY_MS;
                 }
                 if (beaconRunnable == this && beaconHandler != null) {
+                    lastBeaconCycleMs = System.currentTimeMillis();
+                    beaconCycleMeshLimited = MeshBeaconLimits.isActive(getBeaconPrefsContext());
+                    beaconCycleScheduled = nextMs >= 10_000L;
                     beaconHandler.postDelayed(this, nextMs);
                 }
             }
@@ -2569,6 +2576,29 @@ try {
         beaconWaitForPositionRunnable = null;
         forceFirstPostConnectBeacon = false;
         beaconTimerArmed = false;
+    }
+
+    /**
+     * A queued beacon was timed for the old transmit radio. When the MeshCore interval cap
+     * starts or stops applying, re-time it from the last beacon so UV-PRO does not wait out a
+     * MeshCore 30 minute delay and MeshCore does not send on a UV-PRO 5 minute delay.
+     */
+    private void rescheduleBeaconForTransmitChange() {
+        if (!beaconTimerArmed || beaconHandler == null || beaconRunnable == null
+                || forceFirstPostConnectBeacon || !beaconCycleScheduled) {
+            return;
+        }
+        boolean meshLimited = MeshBeaconLimits.isActive(getBeaconPrefsContext());
+        if (meshLimited == beaconCycleMeshLimited) {
+            return;
+        }
+        long dueMs = lastBeaconCycleMs + getBeaconTimerDelayMs();
+        long delayMs = Math.max(5_000L, dueMs - System.currentTimeMillis());
+        beaconCycleMeshLimited = meshLimited;
+        beaconHandler.removeCallbacks(beaconRunnable);
+        beaconHandler.postDelayed(beaconRunnable, delayMs);
+        Log.d(TAG, "Beacon transmit radio changed — next beacon in " + (delayMs / 1000L) + "s"
+                + (meshLimited ? " (MeshCore interval cap)" : ""));
     }
 
     /** Arms the beacon timer if a transport is up but no timer is running (never restarts one). */
