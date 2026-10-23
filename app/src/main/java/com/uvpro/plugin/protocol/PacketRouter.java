@@ -224,6 +224,12 @@ public class PacketRouter {
             com.uvpro.plugin.bluetooth.BtConnectionManager uvpro,
             com.uvpro.plugin.bluetooth.BtConnectionManager mesh) {
         pingReplyScheduler.setInboundTransports(uvpro, mesh);
+        if (chatBridge != null) {
+            chatBridge.setInboundTransports(uvpro, mesh);
+        }
+        if (cotBridge != null) {
+            cotBridge.setInboundTransports(uvpro, mesh);
+        }
     }
 
     /**
@@ -296,11 +302,11 @@ public class PacketRouter {
                 break;
 
             case UVProPacket.TYPE_CHAT:
-                routeChatPacket(packet.getPayload());
+                routeChatPacket(packet.getPayload(), inboundTransport);
                 break;
 
             case UVProPacket.TYPE_COT:
-                cotBridge.injectCompressedCot(packet.getPayload(), pathLen);
+                cotBridge.injectCompressedCot(packet.getPayload(), pathLen, inboundTransport);
                 break;
 
             case UVProPacket.TYPE_PING:
@@ -368,7 +374,7 @@ public class PacketRouter {
                 if (reassembled != null) {
                     Log.d(TAG, "Fragment reassembly complete: "
                             + reassembled.length + " bytes");
-                    cotBridge.injectCompressedCot(reassembled, pathLen);
+                    cotBridge.injectCompressedCot(reassembled, pathLen, inboundTransport);
                 }
                 break;
 
@@ -634,7 +640,7 @@ public class PacketRouter {
     /**
      * Decode and route a chat message from UV-PRO packet payload.
      */
-    private void routeChatPacket(byte[] payload) {
+    private void routeChatPacket(byte[] payload, RfInboundTransport inboundTransport) {
         if (payload == null || payload.length < 16) return;
 
         java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(payload);
@@ -659,7 +665,8 @@ public class PacketRouter {
         Log.d(TAG, "Chat mid=" + messageId + " from " + sender + " [" + room + "] len=" + message.length());
         boolean accepted = chatBridge.injectRadioMessage(sender, room, message, messageId);
         if (accepted && chatBridge.shouldSendInboundDeliveredAck(room)) {
-            chatBridge.sendRadioChatAck(messageId, UVProPacket.ACK_KIND_DELIVERED);
+            chatBridge.sendRadioChatAck(messageId, UVProPacket.ACK_KIND_DELIVERED,
+                    inboundTransport);
         } else if (accepted) {
             Log.d(TAG, "Skipping DELIVERED ACK for All Chat Rooms mid=" + messageId
                     + " room=" + room + " sender=" + sender);

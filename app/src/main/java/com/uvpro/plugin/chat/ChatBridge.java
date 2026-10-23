@@ -3484,7 +3484,53 @@ public class ChatBridge {
      * Notify peer over RF that their chat frame was received (GeoChat delivered/read).
      */
     public void sendRadioChatAck(int wireMessageId, byte ackKind) {
-        if (!relayOutgoing || btManager == null || !btManager.isConnected()) {
+        sendRadioChatAck(wireMessageId, ackKind, null);
+    }
+
+    /** Link manager for the radio an inbound line arrived on, set from the router. */
+    private volatile BtConnectionManager uvproInboundManager;
+    private volatile BtConnectionManager meshInboundManager;
+    private final ConcurrentHashMap<Integer, com.uvpro.plugin.protocol.RfInboundTransport>
+            inboundTransportByWireMid = new ConcurrentHashMap<>();
+
+    public void setInboundTransports(BtConnectionManager uvpro, BtConnectionManager mesh) {
+        this.uvproInboundManager = uvpro;
+        this.meshInboundManager = mesh;
+    }
+
+    /**
+     * ACKs go back over the radio the message arrived on; the active transmit radio is only the
+     * fallback when that link is gone or unknown.
+     */
+    private BtConnectionManager resolveAckManager(int wireMessageId) {
+        com.uvpro.plugin.protocol.RfInboundTransport inbound =
+                inboundTransportByWireMid.get(wireMessageId);
+        BtConnectionManager preferred = null;
+        if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.MESHCORE) {
+            preferred = meshInboundManager;
+        } else if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.UVPRO) {
+            preferred = uvproInboundManager;
+        }
+        if (preferred != null && preferred.isConnected()) {
+            return preferred;
+        }
+        return btManager;
+    }
+
+    /**
+     * @param inboundTransport radio the chat arrived on, or null to reuse what was recorded for
+     *                         this wire id (READ receipts sent later)
+     */
+    public void sendRadioChatAck(int wireMessageId, byte ackKind,
+                                 com.uvpro.plugin.protocol.RfInboundTransport inboundTransport) {
+        if (inboundTransport != null) {
+            if (inboundTransportByWireMid.size() > 256) {
+                inboundTransportByWireMid.clear();
+            }
+            inboundTransportByWireMid.put(wireMessageId, inboundTransport);
+        }
+        BtConnectionManager ackTx = resolveAckManager(wireMessageId);
+        if (!relayOutgoing || ackTx == null || !ackTx.isConnected()) {
             return;
         }
         long delayMs = ackKind == UVProPacket.ACK_KIND_READ
@@ -3497,7 +3543,8 @@ public class ChatBridge {
     }
 
     private void sendRadioChatAckWhenReady(int wireMessageId, byte ackKind, int deferAttempt) {
-        if (disposed || !relayOutgoing || btManager == null || !btManager.isConnected()) {
+        BtConnectionManager ackTx = resolveAckManager(wireMessageId);
+        if (disposed || !relayOutgoing || ackTx == null || !ackTx.isConnected()) {
             return;
         }
         if (com.uvpro.plugin.protocol.RfTxArbitrator.get().shouldDeferRfChatAck()) {
@@ -3529,8 +3576,14 @@ public class ChatBridge {
             }
             Ax25Frame frame = Ax25Frame.createUVProFrame(
                     localCallsign, 0, packetBytes);
-            btManager.sendKissFrame(frame.encode());
-            Log.d(TAG, "Sent radio chat ACK kind=" + ackKind + " mid=" + wireMessageId);
+            BtConnectionManager ackTx = resolveAckManager(wireMessageId);
+            if (ackTx == null) {
+                return;
+            }
+            ackTx.sendKissFrame(frame.encode());
+            Log.d(TAG, "Sent radio chat ACK kind=" + ackKind + " mid=" + wireMessageId
+                    + " via " + (ackTx instanceof com.uvpro.plugin.bluetooth.MeshBtConnectionManager
+                    ? "MeshCore" : "UV-PRO"));
         } catch (Exception e) {
             Log.e(TAG, "sendRadioChatAck failed", e);
         }

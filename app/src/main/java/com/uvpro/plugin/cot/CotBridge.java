@@ -1361,6 +1361,61 @@ public class CotBridge {
      * the MeshCore pathLen (number of repeater hops) for display purposes.
      */
     public void injectCompressedCot(byte[] compressed, int pathLen) {
+        injectCompressedCot(compressed, pathLen, null);
+    }
+
+    private volatile BtConnectionManager uvproInboundManager;
+    private volatile BtConnectionManager meshInboundManager;
+
+    public void setInboundTransports(BtConnectionManager uvpro, BtConnectionManager mesh) {
+        this.uvproInboundManager = uvpro;
+        this.meshInboundManager = mesh;
+    }
+
+    /** ACK over the radio the CoT arrived on; active transmit radio only as fallback. */
+    private BtConnectionManager resolveAckManager(
+            com.uvpro.plugin.protocol.RfInboundTransport inbound) {
+        BtConnectionManager preferred = null;
+        if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.MESHCORE) {
+            preferred = meshInboundManager;
+        } else if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.UVPRO) {
+            preferred = uvproInboundManager;
+        }
+        if (preferred != null && preferred.isConnected()) {
+            return preferred;
+        }
+        return btManager;
+    }
+
+    private static final long INBOUND_COT_DUPLICATE_WINDOW_MS = 120_000L;
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> recentInboundCotByUid =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * True when an identical CoT body for this uid was already injected recently, i.e. a sender
+     * retransmit because our ACK was lost.
+     */
+    private boolean isDuplicateInboundCot(String uid, String xml) {
+        if (uid == null || xml == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        String fingerprint = xml.length() + ":" + xml.hashCode();
+        String key = uid + "|" + fingerprint;
+        if (recentInboundCotByUid.size() > 512) {
+            recentInboundCotByUid.entrySet().removeIf(
+                    e -> now - e.getValue() > INBOUND_COT_DUPLICATE_WINDOW_MS);
+        }
+        Long previous = recentInboundCotByUid.put(key, now);
+        return previous != null && now - previous <= INBOUND_COT_DUPLICATE_WINDOW_MS;
+    }
+
+    /**
+     * @param inboundTransport radio the CoT arrived on; the ACK is sent back over it. Null falls
+     *                         back to the active transmit radio.
+     */
+    public void injectCompressedCot(byte[] compressed, int pathLen,
+                                    com.uvpro.plugin.protocol.RfInboundTransport inboundTransport) {
         try {
             String xml = CotBuilder.decompressCot(compressed);
             if (xml == null || xml.isEmpty()) {
@@ -1381,6 +1436,12 @@ public class CotBridge {
                 return;
             }
             CotBuilder.stripDirectedDestinations(event);
+            if (isDuplicateInboundCot(event.getUID(), xml)) {
+                Log.d(TAG, "Duplicate inbound CoT (retransmit) uid=" + event.getUID()
+                        + " type=" + event.getType() + " — ACK only, not processed again");
+                sendCotAckForInboundEvent(event, inboundTransport);
+                return;
+            }
             Log.d(TAG, "Injecting decompressed CoT: type=" + event.getType()
                     + " uid=" + event.getUID());
             Log.d(TAG, "CoT received: type=" + event.getType() + " via "
@@ -1391,7 +1452,7 @@ public class CotBridge {
             if (GrgSettingsShare.isGrgSettingsCot(event)) {
                 handleInboundGrgSettingsCot(event);
                 maybeRelayInboundRadioCotToTak(event);
-                sendCotAckForInboundEvent(event);
+                sendCotAckForInboundEvent(event, inboundTransport);
                 return;
             }
             if (isGeoChatCotType(event.getType())) {
@@ -1405,19 +1466,21 @@ public class CotBridge {
                 PingReplyNotifier.maybeNotifyPingReplyFromCot(
                         pingMv.getContext(), event);
             }
-            sendCotAckForInboundEvent(event);
+            sendCotAckForInboundEvent(event, inboundTransport);
         } catch (Exception e) {
             Log.e(TAG, "Error injecting compressed CoT", e);
         }
     }
 
-    private void sendCotAckForInboundEvent(CotEvent event) {
+    private void sendCotAckForInboundEvent(CotEvent event,
+                                           com.uvpro.plugin.protocol.RfInboundTransport inboundTransport) {
         if (event == null) {
             return;
         }
         String ackUid = event.getUID();
+        final BtConnectionManager ackTx = resolveAckManager(inboundTransport);
         if (ackUid == null || ackUid.trim().isEmpty()
-                || btManager == null || !btManager.isConnected()) {
+                || ackTx == null || !ackTx.isConnected()) {
             return;
         }
         try {
@@ -1429,9 +1492,9 @@ public class CotBridge {
             if (ackBytes != null) {
                 Ax25Frame ackFrame = Ax25Frame.createUVProFrame(localCallsign, 0, ackBytes);
                 byte[] ax25 = ackFrame.encode();
-                if (btManager instanceof MeshBtConnectionManager) {
+                if (ackTx instanceof MeshBtConnectionManager) {
                     final byte[] paced = ax25;
-                    final BtConnectionManager tx = btManager;
+                    final BtConnectionManager tx = ackTx;
                     final String uid = ackUid.trim();
                     cotRetryExecutor.schedule(() -> {
                         try {
@@ -1450,7 +1513,7 @@ public class CotBridge {
                         }
                     }, MESH_COT_ACK_QUIET_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } else {
-                    btManager.sendKissFrame(ax25);
+                    ackTx.sendKissFrame(ax25);
                     Log.d(TAG, "CoT ACK sent uid=" + ackUid.trim());
                 }
             }
