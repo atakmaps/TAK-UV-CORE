@@ -16,6 +16,7 @@ import com.atakmap.android.contact.IndividualContact;
 import com.atakmap.android.contact.PluginConnector;
 import com.atakmap.android.cot.CotMapComponent;
 import com.atakmap.android.importexport.CotEventFactory;
+import com.atakmap.android.util.ATAKUtilities;
 import com.atakmap.android.util.IconUtilities;
 import com.atakmap.android.ipc.AtakBroadcast;
 import com.atakmap.android.icons.UserIcon;
@@ -1387,6 +1388,196 @@ public class CotBridge {
         return btManager;
     }
 
+    // --- Delete relay: a local delete of an item that crossed the radio is sent as t-x-d-d ---
+
+    private static final String PREF_RADIO_SYNCED_ITEMS = "uvpro_radio_synced_map_items";
+    private static final int MAX_RADIO_SYNCED_ITEMS = 400;
+    private static final long INBOUND_DELETE_GUARD_MS = 60_000L;
+    private static final long LOCAL_DELETE_SETTLE_MS = 3000L;
+    private final Map<String, String> radioSyncedMapItems = new ConcurrentHashMap<>();
+    private final Map<String, Long> inboundDeleteGuard = new ConcurrentHashMap<>();
+    private volatile boolean radioSyncedItemsLoaded;
+    private MapEventDispatcher.MapEventDispatchListener itemRemovedListener;
+
+    private boolean isDeleteSyncType(String type) {
+        return type != null && !type.startsWith("t-x-d-d") && isRelayableMapCotType(type)
+                && !type.contains("-U-C");
+    }
+
+    private void loadRadioSyncedItems() {
+        if (radioSyncedItemsLoaded) {
+            return;
+        }
+        radioSyncedItemsLoaded = true;
+        try {
+            android.content.SharedPreferences prefs = android.preference.PreferenceManager
+                    .getDefaultSharedPreferences(mapView.getContext());
+            Set<String> saved = prefs.getStringSet(PREF_RADIO_SYNCED_ITEMS, null);
+            if (saved != null) {
+                for (String entry : saved) {
+                    int tab = entry.indexOf('\t');
+                    if (tab > 0) {
+                        radioSyncedMapItems.put(entry.substring(0, tab), entry.substring(tab + 1));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "loadRadioSyncedItems failed", e);
+        }
+    }
+
+    private void persistRadioSyncedItems() {
+        try {
+            Set<String> out = new java.util.HashSet<>();
+            for (Map.Entry<String, String> e : radioSyncedMapItems.entrySet()) {
+                out.add(e.getKey() + "\t" + e.getValue());
+            }
+            android.preference.PreferenceManager.getDefaultSharedPreferences(mapView.getContext())
+                    .edit().putStringSet(PREF_RADIO_SYNCED_ITEMS, out).apply();
+        } catch (Exception e) {
+            Log.w(TAG, "persistRadioSyncedItems failed", e);
+        }
+    }
+
+    /** Remember a map item that went out over, or arrived on, the radio. */
+    private void noteRadioSyncedMapItem(CotEvent event) {
+        if (event == null) {
+            return;
+        }
+        String uid = event.getUID();
+        String type = event.getType();
+        if (uid == null || uid.trim().isEmpty() || uid.startsWith(ANDROID_UID_PREFIX)
+                || !isDeleteSyncType(type) || isSelfPliBeacon(event)) {
+            return;
+        }
+        loadRadioSyncedItems();
+        String trimUid = uid.trim();
+        if (radioSyncedMapItems.size() >= MAX_RADIO_SYNCED_ITEMS
+                && !radioSyncedMapItems.containsKey(trimUid)) {
+            radioSyncedMapItems.clear();
+        }
+        if (!type.equals(radioSyncedMapItems.put(trimUid, type))) {
+            persistRadioSyncedItems();
+        }
+    }
+
+    private void forgetRadioSyncedMapItem(String uid) {
+        loadRadioSyncedItems();
+        if (radioSyncedMapItems.remove(uid) != null) {
+            persistRadioSyncedItems();
+        }
+    }
+
+    private void registerItemRemovedListener() {
+        itemRemovedListener = this::onMapItemRemoved;
+        try {
+            mapView.getMapEventDispatcher().addMapEventListener(
+                    MapEvent.ITEM_REMOVED, itemRemovedListener);
+            Log.d(TAG, "Registered ITEM_REMOVED delete relay listener");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to register ITEM_REMOVED listener", e);
+        }
+    }
+
+    private void unregisterItemRemovedListener() {
+        if (itemRemovedListener != null && mapView != null) {
+            try {
+                mapView.getMapEventDispatcher().removeMapEventListener(
+                        MapEvent.ITEM_REMOVED, itemRemovedListener);
+            } catch (Exception e) {
+                Log.w(TAG, "unregister itemRemovedListener", e);
+            }
+        }
+        itemRemovedListener = null;
+    }
+
+    private void onMapItemRemoved(MapEvent event) {
+        try {
+            MapItem item = event == null ? null : event.getItem();
+            String uid = item == null ? null : item.getUID();
+            if (uid == null) {
+                return;
+            }
+            loadRadioSyncedItems();
+            String type = radioSyncedMapItems.get(uid);
+            if (type == null) {
+                return;
+            }
+            Long guardUntil = inboundDeleteGuard.get(uid);
+            if (guardUntil != null && System.currentTimeMillis() < guardUntil) {
+                inboundDeleteGuard.remove(uid);
+                forgetRadioSyncedMapItem(uid);
+                Log.d(TAG, "Removal of uid=" + uid + " came from a received delete — not re-sent");
+                return;
+            }
+            // ATAK sometimes removes and re-adds an item on refresh; only a lasting removal counts.
+            final String deleteType = type;
+            mapView.postDelayed(() -> {
+                try {
+                    if (mapView.getMapItem(uid) != null) {
+                        return;
+                    }
+                    if (radioSyncedMapItems.remove(uid) == null) {
+                        return;
+                    }
+                    persistRadioSyncedItems();
+                    relayLocalDeleteOverRadio(uid, deleteType);
+                } catch (Exception e) {
+                    Log.w(TAG, "Delete relay failed uid=" + uid, e);
+                }
+            }, LOCAL_DELETE_SETTLE_MS);
+        } catch (Exception e) {
+            Log.w(TAG, "onMapItemRemoved failed", e);
+        }
+    }
+
+    private void relayLocalDeleteOverRadio(String uid, String type) {
+        if (btManager == null || !btManager.isConnected()) {
+            Log.d(TAG, "Local delete uid=" + uid + " not sent — radio not connected");
+            return;
+        }
+        CotEvent del = CotBuilder.buildDeleteCot(uid, type);
+        Log.d(TAG, "Local delete of radio-synced item uid=" + uid + " type=" + type
+                + " — sending t-x-d-d uid=" + del.getUID());
+        new Thread(() -> sendCotOverRadio(del)).start();
+    }
+
+    /** Remove the item named by a received delete without re-sending it. */
+    private void applyInboundRadioDelete(CotEvent event) {
+        final String uid = CotBuilder.extractDeleteTargetUid(event);
+        if (uid == null) {
+            Log.w(TAG, "Received t-x-d-d without a link uid");
+            return;
+        }
+        inboundDeleteGuard.put(uid, System.currentTimeMillis() + INBOUND_DELETE_GUARD_MS);
+        forgetRadioSyncedMapItem(uid);
+        recentInboundCotByUid.keySet().removeIf(k -> k.startsWith(uid + "|"));
+        mapView.post(() -> {
+            try {
+                MapItem item = mapView.getMapItem(uid);
+                MapItem target = item == null ? null : ATAKUtilities.findAssocShape(item);
+                if (target == null) {
+                    target = item;
+                }
+                if (target == null) {
+                    Log.d(TAG, "Received delete for uid=" + uid + " — not on this map");
+                    inboundDeleteGuard.remove(uid);
+                    return;
+                }
+                if (!target.getMetaBoolean("remoteDelete", true)) {
+                    Log.d(TAG, "Received delete for uid=" + uid + " — item refuses remote delete");
+                    inboundDeleteGuard.remove(uid);
+                    return;
+                }
+                Log.d(TAG, "Received delete over radio — removing uid=" + target.getUID()
+                        + " type=" + target.getType());
+                target.removeFromGroup();
+            } catch (Exception e) {
+                Log.w(TAG, "applyInboundRadioDelete failed uid=" + uid, e);
+            }
+        });
+    }
+
     private static final long INBOUND_COT_DUPLICATE_WINDOW_MS = 120_000L;
     private final java.util.concurrent.ConcurrentHashMap<String, Long> recentInboundCotByUid =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -1442,6 +1633,11 @@ public class CotBridge {
                 sendCotAckForInboundEvent(event, inboundTransport);
                 return;
             }
+            if ("t-x-d-d".equals(event.getType())) {
+                applyInboundRadioDelete(event);
+                sendCotAckForInboundEvent(event, inboundTransport);
+                return;
+            }
             Log.d(TAG, "Injecting decompressed CoT: type=" + event.getType()
                     + " uid=" + event.getUID());
             Log.d(TAG, "CoT received: type=" + event.getType() + " via "
@@ -1460,6 +1656,7 @@ public class CotBridge {
             } else {
                 dispatchCotEvent(event);
             }
+            noteRadioSyncedMapItem(event);
             maybeRelayInboundRadioCotToTak(event);
             MapView pingMv = MapView.getMapView();
             if (pingMv != null) {
@@ -2107,6 +2304,7 @@ public class CotBridge {
             return;
         }
         event = withFriendlyMarkerTeam(event);
+        noteRadioSyncedMapItem(event);
 
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
         boolean holdMeshTx = false;
@@ -3056,6 +3254,8 @@ public class CotBridge {
             Log.w(TAG, "Failed to register shared map item relay listener", e);
         }
 
+        registerItemRemovedListener();
+
         preSendProcessor = (event, toUIDs) -> {
             if (event == null) return;
 
@@ -3854,6 +4054,7 @@ public class CotBridge {
             }
             localCotBroadcastReceiver = null;
         }
+        unregisterItemRemovedListener();
         if (sharedMapItemListener != null && mapView != null) {
             try {
                 mapView.getMapEventDispatcher().removeMapEventListener(
