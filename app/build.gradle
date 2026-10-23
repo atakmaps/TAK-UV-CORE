@@ -120,7 +120,7 @@ android {
             def parts = PLUGIN_VERSION.tokenize('.')
             def computedCode = (parts[0] as int) * 10000 + (parts[1] as int) * 100 + ((parts.size() > 2 ? parts[2] : "0") as int)
             defaultConfig.versionCode = computedCode
-            defaultConfig.versionName = "2.0.20-radios-fixes2 - [" + ATAK_VERSION + "]"
+            defaultConfig.versionName = "2.0.20-radios-fixes3 - [" + ATAK_VERSION + "]"
         }
         debug.setRoot('build-types/debug')
         release.setRoot('build-types/release')
