@@ -2070,11 +2070,43 @@ public class CotBridge {
         sendCotOverRadioInternal(event, false);
     }
 
+    /**
+     * A user-dropped friendly marker ({@code a-f-*}, not an SA/PLI) carries no {@code __group}, so
+     * the receiver drew it with no team ({@code team=NULL}). Stamp the sender's ATAK team on a
+     * copy so the receiver keeps team and colour. The original event is never changed.
+     */
+    private CotEvent withFriendlyMarkerTeam(CotEvent event) {
+        try {
+            String type = event == null ? null : event.getType();
+            if (type == null || !type.startsWith("a-f-") || isSelfPliBeacon(event)
+                    || event.getDetail() == null
+                    || event.getDetail().getFirstChildByName(0, "__group") != null) {
+                return event;
+            }
+            CotEvent copy = CotEvent.parse(event.toString());
+            if (copy == null || copy.getDetail() == null) {
+                return event;
+            }
+            CotDetail group = new CotDetail("__group");
+            group.setAttribute("name", resolveLocalAtakTeamForOutbound());
+            group.setAttribute("role", "Team Member");
+            copy.getDetail().addChild(group);
+            Log.d(TAG, "Friendly marker uid=" + event.getUID() + " type=" + type
+                    + " — added sender team " + group.getAttribute("name"));
+            return copy;
+        } catch (Exception e) {
+            Log.w(TAG, "withFriendlyMarkerTeam failed uid="
+                    + (event == null ? null : event.getUID()), e);
+            return event;
+        }
+    }
+
     private void sendCotOverRadioInternal(CotEvent event, boolean registerRetry) {
         if (btManager == null || !btManager.isConnected()) {
             Log.w(TAG, "Not connected to radio — cannot send CoT");
             return;
         }
+        event = withFriendlyMarkerTeam(event);
 
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
         boolean holdMeshTx = false;
