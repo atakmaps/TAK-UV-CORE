@@ -244,6 +244,66 @@ public class ChatBridge {
 
     public void setBtManager(BtConnectionManager btManager) {
         this.btManager = btManager;
+        if (btManager != null && silenceListenerManagers.add(btManager)) {
+            btManager.addRadioSilenceClearedListener(this::flushChatsHeldForSilence);
+        }
+    }
+
+    private final java.util.Set<BtConnectionManager> silenceListenerManagers =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    private static final int MAX_HELD_SILENCE_CHATS = 20;
+    private static final long HELD_CHAT_SEND_SPACING_MS = 2000L;
+
+    private static final class HeldChat {
+        final String sender;
+        final String room;
+        final String message;
+        final String lineUid;
+
+        HeldChat(String sender, String room, String message, String lineUid) {
+            this.sender = sender;
+            this.room = room;
+            this.message = message;
+            this.lineUid = lineUid;
+        }
+    }
+
+    /** Chat lines typed during Radio Silence, sent in order when silence clears. */
+    private final java.util.concurrent.ConcurrentLinkedQueue<HeldChat> chatsHeldForSilence =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    private void holdChatForSilence(String sender, String room, String message, String lineUid) {
+        if (chatsHeldForSilence.size() >= MAX_HELD_SILENCE_CHATS) {
+            chatsHeldForSilence.poll();
+        }
+        chatsHeldForSilence.add(new HeldChat(sender, room, message, lineUid));
+        Log.i(TAG, "Radio Silence active — holding chat room=" + room + " lineUid=" + lineUid
+                + " (held=" + chatsHeldForSilence.size() + ")");
+    }
+
+    private void flushChatsHeldForSilence() {
+        if (disposed || chatsHeldForSilence.isEmpty()) {
+            return;
+        }
+        BtConnectionManager tx = btManager;
+        if (tx == null || tx.isRadioSilenceEnabled()) {
+            return;
+        }
+        final java.util.List<HeldChat> batch = new java.util.ArrayList<>();
+        HeldChat h;
+        while ((h = chatsHeldForSilence.poll()) != null) {
+            batch.add(h);
+        }
+        Log.i(TAG, "Radio Silence cleared — sending " + batch.size() + " held chat(s)");
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        long delay = 500L;
+        for (HeldChat held : batch) {
+            final HeldChat toSend = held;
+            main.postDelayed(() -> sendChatOverRadio(
+                    toSend.sender, toSend.room, toSend.message, toSend.lineUid), delay);
+            delay += HELD_CHAT_SEND_SPACING_MS;
+        }
     }
 
     public void setEncryptionManager(EncryptionManager em) {
@@ -2965,6 +3025,10 @@ public class ChatBridge {
             Log.w(TAG, "Not connected — cannot send chat");
             return;
         }
+        if (btManager.isRadioSilenceEnabled()) {
+            holdChatForSilence(sender, room, message, geoChatLineUidOrNull);
+            return;
+        }
 
         try {
             int wireMid = UVProPacket.allocateChatWireMessageId();
@@ -2998,6 +3062,12 @@ public class ChatBridge {
 
             Log.d(TAG, "Sending chat over radio: " + ax25.length + " bytes");
             btManager.sendKissFrame(ax25);
+
+            if (isBroadcastRoom(room)) {
+                // Net-wide chat never gets a DELIVERED ACK, so there is nothing to wait for.
+                Log.d(TAG, "Broadcast chat sent mid=" + wireMid + " — no ACK expected, no retry");
+                return;
+            }
 
             // Register for retry watchdog — cancelled when DELIVERED ACK arrives.
             PendingOutboundChat pending =
@@ -3486,6 +3556,11 @@ public class ChatBridge {
             PendingOutboundChat pending = pendingOutboundChats.get(wireMid);
             if (pending == null) {
                 Log.d(TAG, "Retry timer fired mid=" + wireMid + " — already ACK'd, nothing to do");
+                return;
+            }
+            if (btManager != null && btManager.isRadioSilenceEnabled()) {
+                Log.d(TAG, "Retry deferred mid=" + wireMid + " — Radio Silence active");
+                scheduleRetryCheck(wireMid);
                 return;
             }
             int maxRetries = SettingsFragment.getMaxChatRetries(pluginContext);

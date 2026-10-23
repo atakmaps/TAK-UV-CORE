@@ -1647,6 +1647,9 @@ public class MeshBtConnectionManager extends BtConnectionManager {
     public void setRadioSilenceEnabled(boolean enabled) {
         radioSilenceEnabled.set(enabled);
         Log.i(TAG, "Radio Silence " + (enabled ? "enabled" : "disabled"));
+        if (!enabled) {
+            notifyRadioSilenceCleared();
+        }
     }
 
     /** Air sends stop. Companion reads and local radio settings stay allowed. */

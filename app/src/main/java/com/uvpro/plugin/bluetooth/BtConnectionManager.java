@@ -1012,6 +1012,29 @@ public class BtConnectionManager {
     public void setRadioSilenceEnabled(boolean enabled) {
         radioSilenceEnabled.set(enabled);
         Log.i(TAG, "Radio Silence " + (enabled ? "enabled" : "disabled"));
+        if (!enabled) {
+            notifyRadioSilenceCleared();
+        }
+    }
+
+    private final java.util.concurrent.CopyOnWriteArrayList<Runnable> radioSilenceClearedListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Runs when Radio Silence is switched off, so held outbound traffic can be sent. */
+    public void addRadioSilenceClearedListener(Runnable listener) {
+        if (listener != null) {
+            radioSilenceClearedListeners.addIfAbsent(listener);
+        }
+    }
+
+    protected void notifyRadioSilenceCleared() {
+        for (Runnable r : radioSilenceClearedListeners) {
+            try {
+                r.run();
+            } catch (Exception e) {
+                Log.w(TAG, "Radio Silence cleared listener failed: " + e.getMessage());
+            }
+        }
     }
 
     public boolean isRadioSilenceEnabled() {
