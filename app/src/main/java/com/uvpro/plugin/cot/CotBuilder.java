@@ -930,8 +930,12 @@ public class CotBuilder {
                     "creator"));
 
     /**
-     * Drawing/shape CoT stores corner and vertex geometry in {@code link} detail children;
-     * stripping them breaks ATAK importers (e.g. {@code u-d-r} rectangles need four links).
+     * Some CoT types store geometry in {@code link} detail children. Stripping those
+     * breaks ATAK importers. Shapes ({@code u-d-} / {@code u-rb}) need their corner
+     * links. Routes ({@code b-m-r}) need each waypoint link, including {@code point},
+     * {@code type}, {@code uid}, and {@code callsign} (the waypoint name).
+     * {@code RouteImporter.createMarker} drops a link with no {@code point}, and
+     * {@code loadPoints} fails the import when fewer than two points remain.
      */
     private static boolean minifyPreservesLinkDetails(CotEvent event) {
         if (event == null) {
@@ -941,7 +945,9 @@ public class CotBuilder {
         if (type == null || type.isEmpty()) {
             return false;
         }
-        return type.startsWith("u-d-") || type.startsWith("u-rb");
+        return type.startsWith("u-d-")
+                || type.startsWith("u-rb")
+                || type.startsWith("b-m-r");
     }
 
     /**
