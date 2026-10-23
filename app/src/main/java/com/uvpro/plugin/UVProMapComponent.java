@@ -174,6 +174,8 @@ public class UVProMapComponent extends DropDownMapComponent {
     private MapEventDispatcher.MapEventDispatchListener mapItemClickListener;
     private Handler beaconHandler;
     private Runnable beaconRunnable;
+    private volatile boolean beaconTimerArmed;
+    private static final long BEACON_TIMER_ERROR_RETRY_MS = 60_000L;
     private Runnable beaconWaitForPositionRunnable;
     private boolean forceFirstPostConnectBeacon = false;
     private static final long STARTUP_BEACON_DELAY_MS = 30_000L;
@@ -2476,27 +2478,33 @@ try {
         stopBeaconTimer();
         smartBeacon.reset();
         forceFirstPostConnectBeacon = true;
+        beaconTimerArmed = true;
 
         beaconHandler = new Handler(Looper.getMainLooper());
         beaconRunnable = new Runnable() {
             @Override
             public void run() {
-                if (forceFirstPostConnectBeacon) {
-                    if (!hasValidSelfPosition()) {
-                        Log.d(TAG, "Startup beacon delayed — waiting for valid self marker position");
-                        beaconHandler.postDelayed(this, STARTUP_POSITION_POLL_MS);
-                        return;
+                long nextMs = STARTUP_POSITION_POLL_MS;
+                try {
+                    if (forceFirstPostConnectBeacon) {
+                        if (!hasValidSelfPosition()) {
+                            Log.d(TAG, "Startup beacon delayed — waiting for valid self marker position");
+                        } else if (sendBeaconIfConnected(true)) {
+                            forceFirstPostConnectBeacon = false;
+                            nextMs = getBeaconTimerDelayMs();
+                        }
+                    } else {
+                        sendBeaconIfConnected(false);
+                        nextMs = getBeaconTimerDelayMs();
                     }
-                    if (!sendBeaconIfConnected(true)) {
-                        beaconHandler.postDelayed(this, STARTUP_POSITION_POLL_MS);
-                        return;
-                    }
-                    forceFirstPostConnectBeacon = false;
-                } else {
-                    sendBeaconIfConnected(false);
+                } catch (Throwable t) {
+                    // An exception must never end the periodic chain; retry on the next interval.
+                    Log.e(TAG, "Beacon timer cycle failed — rescheduling", t);
+                    nextMs = BEACON_TIMER_ERROR_RETRY_MS;
                 }
-                long nextCheckMs = getBeaconTimerDelayMs();
-                beaconHandler.postDelayed(this, nextCheckMs);
+                if (beaconRunnable == this && beaconHandler != null) {
+                    beaconHandler.postDelayed(this, nextMs);
+                }
             }
         };
         if (hasValidSelfPosition()) {
@@ -2527,7 +2535,9 @@ try {
     /** When MeshCore TX is preferred, do not anchor the 30s startup beacon to a UV-PRO connect. */
     private boolean shouldStartBeaconTimerOnUvProConnect() {
         String preferred = readPreferredTransmitTransportPref();
-        if ("mesh".equals(preferred)) {
+        boolean meshWillArm = meshBtConnectionManager != null
+                && meshBtConnectionManager.isConnected() && beaconTimerArmed;
+        if ("mesh".equals(preferred) && meshWillArm) {
             Log.d(TAG, "UV-PRO connected — deferring beacon timer (MeshCore TX preferred)");
             return false;
         }
@@ -2558,6 +2568,15 @@ try {
         }
         beaconWaitForPositionRunnable = null;
         forceFirstPostConnectBeacon = false;
+        beaconTimerArmed = false;
+    }
+
+    /** Arms the beacon timer if a transport is up but no timer is running (never restarts one). */
+    private void ensureBeaconTimerArmed() {
+        if (!beaconTimerArmed && isAnyTransportConnected()) {
+            Log.d(TAG, "Beacon timer was not armed with a transport connected — arming");
+            startBeaconTimer();
+        }
     }
 
     private long getBeaconTimerDelayMs() {
@@ -2805,6 +2824,7 @@ try {
     }
 
     private void applyActiveTransmitTransportFromPreference() {
+        ensureBeaconTimerArmed();
         BtConnectionManager active = resolveBeaconTransportManager();
         if (cotBridge != null) {
             cotBridge.setBtManager(active);
