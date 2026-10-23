@@ -30,6 +30,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.text.InputType;
 import android.text.method.ScrollingMovementMethod;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.HapticFeedbackConstants;
@@ -413,6 +414,9 @@ public class UVProDropDownReceiver extends DropDownReceiver
     private BroadcastReceiver beaconSettingsReceiver;
     private final AtomicBoolean snapshotReadInFlight = new AtomicBoolean(false);
     private final AtomicBoolean snapshotRefreshPending = new AtomicBoolean(false);
+    private static final long RADIO_EVENT_REFRESH_MIN_INTERVAL_MS = 3000L;
+    private long lastRadioEventRefreshMs;
+    private boolean radioEventRefreshScheduled;
     private final AtomicBoolean snapshotFullRefreshPending = new AtomicBoolean(false);
     private final AtomicBoolean groupReadInFlight = new AtomicBoolean(false);
     private final AtomicBoolean groupRefreshGridPending = new AtomicBoolean(false);
@@ -1007,7 +1011,7 @@ public class UVProDropDownReceiver extends DropDownReceiver
                 if (eventType == 5 || eventType == 6) {
                     refreshChannelGroupFromRadioAsync(true);
                 } else {
-                    refreshChannelGridAsync();
+                    scheduleRadioEventGridRefresh();
                 }
             }));
         }
@@ -8900,6 +8904,29 @@ public class UVProDropDownReceiver extends DropDownReceiver
         updateLoadSelectedRepeaterButtonUi();
     }
 
+    /**
+     * HT status events fire continuously (RSSI, RX/TX state). Each one used to trigger a full
+     * 30-channel read, which kept the radio's Bluetooth link saturated with control commands.
+     */
+    private void scheduleRadioEventGridRefresh() {
+        if (radioEventRefreshScheduled) {
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        long wait = RADIO_EVENT_REFRESH_MIN_INTERVAL_MS - (now - lastRadioEventRefreshMs);
+        if (wait <= 0L) {
+            lastRadioEventRefreshMs = now;
+            refreshChannelGridAsync();
+            return;
+        }
+        radioEventRefreshScheduled = true;
+        getMapView().postDelayed(() -> {
+            radioEventRefreshScheduled = false;
+            lastRadioEventRefreshMs = SystemClock.elapsedRealtime();
+            refreshChannelGridAsync();
+        }, wait);
+    }
+
     private void refreshChannelGridAsync() {
         refreshChannelGridAsync(false, -1);
     }
@@ -8930,8 +8957,9 @@ public class UVProDropDownReceiver extends DropDownReceiver
         new Thread(() -> {
             int targetGroup = currentChannelGroup;
             final int finalTargetGroup = targetGroup;
-            UVProRadioControlManager.RadioControlSnapshot snapshot =
-                    radioControlManager.readSnapshotForGroup(finalTargetGroup, 30);
+            UVProRadioControlManager.RadioControlSnapshot snapshot = fullSnapshot
+                    ? radioControlManager.readSnapshotForGroup(finalTargetGroup, 30)
+                    : radioControlManager.readSnapshotFast(30, forceRefreshChannelId);
             getMapView().post(() -> {
                 try {
                     // Snapshot reads are not authoritative for selected group UI state.
