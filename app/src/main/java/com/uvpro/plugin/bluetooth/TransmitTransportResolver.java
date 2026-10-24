@@ -14,6 +14,16 @@ public final class TransmitTransportResolver {
             boolean uvproTransmitEnabled,
             BtConnectionManager meshManager,
             BtConnectionManager uvproManager) {
+        boolean meshAllowed = com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, null);
+        boolean uvproAllowed = com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, null);
+        if (!meshAllowed) {
+            meshTransmitEnabled = false;
+        }
+        if (!uvproAllowed) {
+            uvproTransmitEnabled = false;
+        }
         BtConnectionManager preferred = null;
         if (meshTransmitEnabled && meshManager != null) {
             preferred = meshManager;
@@ -26,17 +36,21 @@ public final class TransmitTransportResolver {
             }
             BtConnectionManager alternate =
                     preferred == meshManager ? uvproManager : meshManager;
-            if (alternate != null && alternate.isConnected()) {
+            boolean alternateAllowed = alternate == meshManager ? meshAllowed : uvproAllowed;
+            if (alternateAllowed && alternate != null && alternate.isConnected()) {
                 return alternate;
             }
             return preferred;
         }
-        if (meshManager != null && meshManager.isConnected()) {
+        if (meshAllowed && meshManager != null && meshManager.isConnected()) {
             return meshManager;
         }
-        if (uvproManager != null && uvproManager.isConnected()) {
+        if (uvproAllowed && uvproManager != null && uvproManager.isConnected()) {
             return uvproManager;
         }
-        return meshManager != null ? meshManager : uvproManager;
+        if (meshAllowed && meshManager != null) {
+            return meshManager;
+        }
+        return uvproAllowed ? uvproManager : null;
     }
 }

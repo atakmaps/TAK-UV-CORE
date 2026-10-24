@@ -48,6 +48,14 @@
                 android:textStyle="bold"
                 android:paddingBottom="4dp" />
 
+            <!-- radio-surface: uvpro -->
+            <LinearLayout
+                android:id="@+id/section_uvpro_connection"
+                android:tag="radio:uvpro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -146,6 +154,15 @@
                     android:enabled="false"
                     android:background="@drawable/bg_uvpro_connection_button" />
             </LinearLayout>
+            </LinearLayout>
+
+            <!-- radio-surface: mesh -->
+            <LinearLayout
+                android:id="@+id/section_mesh_connection"
+                android:tag="radio:mesh"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -246,6 +263,15 @@
                     android:enabled="false"
                     android:background="@drawable/bg_uvpro_connection_button" />
             </LinearLayout>
+            </LinearLayout>
+
+            <!-- radio-surface: mesh -->
+            <LinearLayout
+                android:id="@+id/section_mesh_gps"
+                android:tag="radio:mesh"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <LinearLayout
                 android:id="@+id/row_augment_gps_from_meshcore"
@@ -279,6 +305,15 @@
                 android:text="Update GPS from MeshCore"
                 android:enabled="false"
                 android:background="@drawable/bg_uvpro_connection_button" />
+            </LinearLayout>
+
+            <!-- radio-surface: uvpro -->
+            <LinearLayout
+                android:id="@+id/section_uvpro_gps"
+                android:tag="radio:uvpro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -320,6 +355,25 @@
                 android:text="Update GPS from Radio"
                 android:enabled="false"
                 android:background="@drawable/bg_uvpro_connection_button" />
+            </LinearLayout>
+
+            <!-- radio-surface: shared. Radio silence follows whichever radio is still shown. -->
+            <LinearLayout
+                android:id="@+id/section_station_identity"
+                android:tag="radio:shared"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btn_radio_silence"
+                style="@style/UvproPillButton.Beacon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:text="Long Press for Radio Silence"
+                android:background="@drawable/bg_uvpro_channel_button" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -458,11 +512,15 @@
                 android:textColor="#FF888888"
                 android:textSize="11sp"
                 android:paddingTop="4dp" />
+            </LinearLayout>
 
         </LinearLayout>
 
+        <!-- radio-surface: uvpro -->
         <!-- ==================== CHANNEL CONTROL ==================== -->
         <LinearLayout
+            android:id="@+id/section_channel_control"
+            android:tag="radio:uvpro"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -484,15 +542,6 @@
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:paddingBottom="4dp" />
-
-                <Button
-                    android:id="@+id/btn_radio_silence"
-                    style="@style/UvproPillButton.Beacon"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:text="Long Press for Radio Silence"
-                    android:background="@drawable/bg_uvpro_channel_button" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -790,8 +839,10 @@
                 android:background="@drawable/bg_uvpro_channel_button" />
         </LinearLayout>
 
+        <!-- radio-surface: mixed. Children are tagged mesh, uvpro, or shared. -->
         <!-- ==================== TRANSMIT SELECTION ==================== -->
         <LinearLayout
+            android:id="@+id/section_transmit"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -809,6 +860,8 @@
                 android:paddingBottom="4dp" />
 
             <LinearLayout
+                android:id="@+id/row_mesh_transmit"
+                android:tag="radio:mesh"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
@@ -829,6 +882,8 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/row_uvpro_transmit"
+                android:tag="radio:uvpro"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
@@ -850,6 +905,8 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/row_wifi_transmit"
+                android:tag="radio:shared"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
@@ -871,8 +928,11 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- radio-surface: shared -->
         <!-- ==================== BEACON (interval display) ==================== -->
         <LinearLayout
+            android:id="@+id/section_beacon"
+            android:tag="radio:shared"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -974,8 +1034,11 @@
                 android:background="@drawable/bg_uvpro_beacon_button" />
         </LinearLayout>
 
+        <!-- radio-surface: uvpro -->
         <!-- ==================== APRS ==================== -->
         <LinearLayout
+            android:id="@+id/section_aprs"
+            android:tag="radio:uvpro"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -1119,8 +1182,11 @@
                 android:background="@drawable/bg_uvpro_aprs_button" />
         </LinearLayout>
 
+        <!-- radio-surface: mesh -->
         <!-- ==================== MESHCORE ==================== -->
         <LinearLayout
+            android:id="@+id/section_meshcore"
+            android:tag="radio:mesh"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -1395,8 +1461,11 @@
 
         </LinearLayout>
 
+        <!-- radio-surface: shared. Mesh and UV-PRO buttons below are tagged. -->
         <!-- ==================== SETTINGS ==================== -->
         <LinearLayout
+            android:id="@+id/section_settings"
+            android:tag="radio:shared"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -1432,6 +1501,7 @@
 
             <Button
                 android:id="@+id/btn_mesh_node_settings"
+                android:tag="radio:mesh"
                 style="@style/UvproPillButton.Beacon"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -1441,6 +1511,7 @@
 
             <Button
                 android:id="@+id/btn_packet_terminal"
+                android:tag="radio:uvpro"
                 style="@style/UvproPillButton.Beacon"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -1450,6 +1521,7 @@
 
             <LinearLayout
                 android:id="@+id/packet_terminal_section"
+                android:tag="radio:uvpro"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -1460,6 +1532,14 @@
 
                 <include layout="@layout/packet_terminal_panel" />
             </LinearLayout>
+
+            <!-- radio-surface: uvpro -->
+            <LinearLayout
+                android:id="@+id/section_initial_channel_setup"
+                android:tag="radio:uvpro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
             <Button
                 android:id="@+id/btn_initial_channel_group_setup"
@@ -1476,10 +1556,14 @@
                 android:textColor="#FF888888"
                 android:textSize="11sp"
                 android:paddingTop="4dp" />
+            </LinearLayout>
         </LinearLayout>
 
+        <!-- radio-surface: shared -->
         <!-- ==================== LOG ==================== -->
         <LinearLayout
+            android:id="@+id/section_log"
+            android:tag="radio:shared"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"

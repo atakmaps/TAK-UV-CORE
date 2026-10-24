@@ -67,6 +67,10 @@ public class MeshStatusOverlay extends MarkerIconWidget implements MapWidget.OnC
         }
     }
 
+    public static boolean isInstalled() {
+        return instance != null;
+    }
+
     public static void install(Context pluginContext) {
         // Skip if already installed — prevents duplicate widget on repeated panel opens.
         if (instance != null) {

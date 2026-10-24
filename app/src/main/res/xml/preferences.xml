@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 
+<!-- radio-surface roles live in RadioSurfaceCatalog. Categories below are shared
+     except APRS Settings (uvpro) and Disable Mesh Beacon Limiting (mesh). -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
-
+    <com.atakmap.android.gui.PanListPreference
+        android:key="uvpro_radio_profile"
+        android:title="Radios"
+        android:summary="Which radio controls are shown"
+        android:dialogTitle="Radios"
+        android:entries="@array/radio_profile_labels"
+        android:entryValues="@array/radio_profile_values" />
 
     <Preference
 

@@ -930,8 +930,51 @@ public class CotBuilder {
                     "creator"));
 
     /**
-     * Drawing/shape CoT stores corner and vertex geometry in {@code link} detail children;
-     * stripping them breaks ATAK importers (e.g. {@code u-d-r} rectangles need four links).
+     * ATAK-style delete task ({@code t-x-d-d}) for a map item this plugin relayed. The link needs
+     * uid, relation and type; {@code __forcedelete} makes the receiver remove the item.
+     */
+    public static CotEvent buildDeleteCot(String deletedUid, String deletedType) {
+        CotEvent event = new CotEvent();
+        event.setUID(java.util.UUID.randomUUID().toString());
+        event.setType("t-x-d-d");
+        event.setHow("h-g-i-g-o");
+        long now = System.currentTimeMillis();
+        event.setTime(new com.atakmap.coremap.maps.time.CoordinatedTime(now));
+        event.setStart(new com.atakmap.coremap.maps.time.CoordinatedTime(now));
+        event.setStale(new com.atakmap.coremap.maps.time.CoordinatedTime(now + 5 * 60_000L));
+        event.setPoint(new CotPoint(0, 0, CotPoint.UNKNOWN, CotPoint.UNKNOWN, CotPoint.UNKNOWN));
+        CotDetail detail = new CotDetail("detail");
+        CotDetail link = new CotDetail("link");
+        link.setAttribute("uid", deletedUid);
+        link.setAttribute("relation", "none");
+        link.setAttribute("type", deletedType != null && !deletedType.isEmpty()
+                ? deletedType : "b-m-p-w");
+        detail.addChild(link);
+        detail.addChild(new CotDetail("__forcedelete"));
+        event.setDetail(detail);
+        return event;
+    }
+
+    /** UID named by the link of a {@code t-x-d-d} event, or null. */
+    public static String extractDeleteTargetUid(CotEvent event) {
+        if (event == null || event.getDetail() == null) {
+            return null;
+        }
+        CotDetail link = event.getDetail().getFirstChildByName(0, "link");
+        if (link == null) {
+            return null;
+        }
+        String uid = link.getAttribute("uid");
+        return uid == null || uid.trim().isEmpty() ? null : uid.trim();
+    }
+
+    /**
+     * Some CoT types store geometry in {@code link} detail children. Stripping those
+     * breaks ATAK importers. Shapes ({@code u-d-} / {@code u-rb}) need their corner
+     * links. Routes ({@code b-m-r}) need each waypoint link, including {@code point},
+     * {@code type}, {@code uid}, and {@code callsign} (the waypoint name).
+     * {@code RouteImporter.createMarker} drops a link with no {@code point}, and
+     * {@code loadPoints} fails the import when fewer than two points remain.
      */
     private static boolean minifyPreservesLinkDetails(CotEvent event) {
         if (event == null) {
@@ -941,7 +984,10 @@ public class CotBuilder {
         if (type == null || type.isEmpty()) {
             return false;
         }
-        return type.startsWith("u-d-") || type.startsWith("u-rb");
+        return type.startsWith("u-d-")
+                || "t-x-d-d".equals(type)
+                || type.startsWith("u-rb")
+                || type.startsWith("b-m-r");
     }
 
     /**

@@ -57,6 +57,10 @@ public class MeshDetailsDropDownReceiver extends DropDownReceiver
         if (!SHOW_MESH_DETAILS.equals(intent.getAction())) {
             return;
         }
+        if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, getMapView().getContext())) {
+            return;
+        }
         String uid = intent.getStringExtra(EXTRA_TARGET_UID);
         if (uid == null || uid.isEmpty()) {
             return;

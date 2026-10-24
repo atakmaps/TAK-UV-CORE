@@ -16,6 +16,7 @@ import com.atakmap.android.contact.IndividualContact;
 import com.atakmap.android.contact.PluginConnector;
 import com.atakmap.android.cot.CotMapComponent;
 import com.atakmap.android.importexport.CotEventFactory;
+import com.atakmap.android.util.ATAKUtilities;
 import com.atakmap.android.util.IconUtilities;
 import com.atakmap.android.ipc.AtakBroadcast;
 import com.atakmap.android.icons.UserIcon;
@@ -1361,6 +1362,288 @@ public class CotBridge {
      * the MeshCore pathLen (number of repeater hops) for display purposes.
      */
     public void injectCompressedCot(byte[] compressed, int pathLen) {
+        injectCompressedCot(compressed, pathLen, null);
+    }
+
+    private volatile BtConnectionManager uvproInboundManager;
+    private volatile BtConnectionManager meshInboundManager;
+
+    public void setInboundTransports(BtConnectionManager uvpro, BtConnectionManager mesh) {
+        this.uvproInboundManager = uvpro;
+        this.meshInboundManager = mesh;
+    }
+
+    /** ACK over the radio the CoT arrived on; active transmit radio only as fallback. */
+    private BtConnectionManager resolveAckManager(
+            com.uvpro.plugin.protocol.RfInboundTransport inbound) {
+        BtConnectionManager preferred = null;
+        if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.MESHCORE) {
+            preferred = meshInboundManager;
+        } else if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.UVPRO) {
+            preferred = uvproInboundManager;
+        }
+        if (preferred != null && preferred.isConnected()) {
+            return preferred;
+        }
+        return btManager;
+    }
+
+    // --- Delete relay: a local delete of an item that crossed the radio is sent as t-x-d-d ---
+
+    private static final String PREF_RADIO_SYNCED_ITEMS = "uvpro_radio_synced_map_items";
+    private static final int MAX_RADIO_SYNCED_ITEMS = 400;
+    private static final long INBOUND_DELETE_GUARD_MS = 60_000L;
+    private static final long LOCAL_DELETE_SETTLE_MS = 3000L;
+    private final Map<String, String> radioSyncedMapItems = new ConcurrentHashMap<>();
+    private final Map<String, Long> inboundDeleteGuard = new ConcurrentHashMap<>();
+    private volatile boolean radioSyncedItemsLoaded;
+    private MapEventDispatcher.MapEventDispatchListener itemRemovedListener;
+
+    private boolean isDeleteSyncType(String type) {
+        return type != null && !type.startsWith("t-x-d-d") && isRelayableMapCotType(type)
+                && !type.contains("-U-C");
+    }
+
+    private void loadRadioSyncedItems() {
+        if (radioSyncedItemsLoaded) {
+            return;
+        }
+        radioSyncedItemsLoaded = true;
+        try {
+            android.content.SharedPreferences prefs = android.preference.PreferenceManager
+                    .getDefaultSharedPreferences(mapView.getContext());
+            Set<String> saved = prefs.getStringSet(PREF_RADIO_SYNCED_ITEMS, null);
+            if (saved != null) {
+                for (String entry : saved) {
+                    int tab = entry.indexOf('\t');
+                    if (tab > 0) {
+                        radioSyncedMapItems.put(entry.substring(0, tab), entry.substring(tab + 1));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "loadRadioSyncedItems failed", e);
+        }
+    }
+
+    private void persistRadioSyncedItems() {
+        try {
+            Set<String> out = new java.util.HashSet<>();
+            for (Map.Entry<String, String> e : radioSyncedMapItems.entrySet()) {
+                out.add(e.getKey() + "\t" + e.getValue());
+            }
+            android.preference.PreferenceManager.getDefaultSharedPreferences(mapView.getContext())
+                    .edit().putStringSet(PREF_RADIO_SYNCED_ITEMS, out).apply();
+        } catch (Exception e) {
+            Log.w(TAG, "persistRadioSyncedItems failed", e);
+        }
+    }
+
+    /** Remember a map item that went out over, or arrived on, the radio. */
+    private void noteRadioSyncedMapItem(CotEvent event) {
+        if (event == null) {
+            return;
+        }
+        String uid = event.getUID();
+        String type = event.getType();
+        if (uid == null || uid.trim().isEmpty() || uid.startsWith(ANDROID_UID_PREFIX)
+                || !isDeleteSyncType(type) || isSelfPliBeacon(event)) {
+            return;
+        }
+        loadRadioSyncedItems();
+        String trimUid = uid.trim();
+        if (radioSyncedMapItems.size() >= MAX_RADIO_SYNCED_ITEMS
+                && !radioSyncedMapItems.containsKey(trimUid)) {
+            radioSyncedMapItems.clear();
+        }
+        if (!type.equals(radioSyncedMapItems.put(trimUid, type))) {
+            persistRadioSyncedItems();
+        }
+    }
+
+    private void forgetRadioSyncedMapItem(String uid) {
+        loadRadioSyncedItems();
+        if (radioSyncedMapItems.remove(uid) != null) {
+            persistRadioSyncedItems();
+        }
+    }
+
+    private void registerItemRemovedListener() {
+        itemRemovedListener = this::onMapItemRemoved;
+        try {
+            mapView.getMapEventDispatcher().addMapEventListener(
+                    MapEvent.ITEM_REMOVED, itemRemovedListener);
+            Log.d(TAG, "Registered ITEM_REMOVED delete relay listener");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to register ITEM_REMOVED listener", e);
+        }
+    }
+
+    private void unregisterItemRemovedListener() {
+        if (itemRemovedListener != null && mapView != null) {
+            try {
+                mapView.getMapEventDispatcher().removeMapEventListener(
+                        MapEvent.ITEM_REMOVED, itemRemovedListener);
+            } catch (Exception e) {
+                Log.w(TAG, "unregister itemRemovedListener", e);
+            }
+        }
+        itemRemovedListener = null;
+    }
+
+    private void onMapItemRemoved(MapEvent event) {
+        try {
+            MapItem item = event == null ? null : event.getItem();
+            String uid = item == null ? null : item.getUID();
+            if (uid == null) {
+                return;
+            }
+            loadRadioSyncedItems();
+            String type = radioSyncedMapItems.get(uid);
+            if (type == null) {
+                return;
+            }
+            Long guardUntil = inboundDeleteGuard.get(uid);
+            if (guardUntil != null && System.currentTimeMillis() < guardUntil) {
+                inboundDeleteGuard.remove(uid);
+                forgetRadioSyncedMapItem(uid);
+                Log.d(TAG, "Removal of uid=" + uid + " came from a received delete — not re-sent");
+                return;
+            }
+            // ATAK sometimes removes and re-adds an item on refresh; only a lasting removal counts.
+            final String deleteType = type;
+            mapView.postDelayed(() -> {
+                try {
+                    if (mapView.getMapItem(uid) != null) {
+                        return;
+                    }
+                    if (radioSyncedMapItems.remove(uid) == null) {
+                        return;
+                    }
+                    persistRadioSyncedItems();
+                    relayLocalDeleteOverRadio(uid, deleteType);
+                } catch (Exception e) {
+                    Log.w(TAG, "Delete relay failed uid=" + uid, e);
+                }
+            }, LOCAL_DELETE_SETTLE_MS);
+        } catch (Exception e) {
+            Log.w(TAG, "onMapItemRemoved failed", e);
+        }
+    }
+
+    private void relayLocalDeleteOverRadio(String uid, String type) {
+        if (btManager == null || !btManager.isConnected()) {
+            Log.d(TAG, "Local delete uid=" + uid + " not sent — radio not connected");
+            return;
+        }
+        CotEvent del = CotBuilder.buildDeleteCot(uid, type);
+        Log.d(TAG, "Local delete of radio-synced item uid=" + uid + " type=" + type
+                + " — sending t-x-d-d uid=" + del.getUID());
+        new Thread(() -> sendCotOverRadio(del)).start();
+    }
+
+    /** Remove the item named by a received delete without re-sending it. */
+    private void applyInboundRadioDelete(CotEvent event) {
+        final String uid = CotBuilder.extractDeleteTargetUid(event);
+        if (uid == null) {
+            Log.w(TAG, "Received t-x-d-d without a link uid");
+            return;
+        }
+        inboundDeleteGuard.put(uid, System.currentTimeMillis() + INBOUND_DELETE_GUARD_MS);
+        forgetRadioSyncedMapItem(uid);
+        recentInboundCotByUid.keySet().removeIf(k -> k.startsWith(uid + "|"));
+        mapView.post(() -> {
+            try {
+                MapItem item = mapView.getMapItem(uid);
+                MapItem target = item == null ? null : ATAKUtilities.findAssocShape(item);
+                if (target == null) {
+                    target = item;
+                }
+                if (target == null) {
+                    Log.d(TAG, "Received delete for uid=" + uid + " — not on this map");
+                    inboundDeleteGuard.remove(uid);
+                    return;
+                }
+                if (!target.getMetaBoolean("remoteDelete", true)) {
+                    Log.d(TAG, "Received delete for uid=" + uid + " — item refuses remote delete");
+                    inboundDeleteGuard.remove(uid);
+                    return;
+                }
+                Log.d(TAG, "Received delete over radio — removing uid=" + target.getUID()
+                        + " type=" + target.getType());
+                target.removeFromGroup();
+            } catch (Exception e) {
+                Log.w(TAG, "applyInboundRadioDelete failed uid=" + uid, e);
+            }
+        });
+    }
+
+    /**
+     * UV-PRO senders send a second copy about 3 s after the first, and the radio is half duplex.
+     * An ACK keyed straight after copy 1 landed on top of copy 2 and was lost, which cost a 15 s
+     * retry. The ACK now waits until the channel has been quiet for the OPENRL guard.
+     */
+    private static final long UVPRO_COT_ACK_FIRST_DELAY_MS = 300L;
+    private static final long UVPRO_COT_ACK_POLL_MS = 400L;
+    private static final int UVPRO_COT_ACK_MAX_DEFERS = 24;
+    private final Set<String> pendingUvproCotAcks = ConcurrentHashMap.newKeySet();
+
+    private void scheduleQuietCotAck(BtConnectionManager tx, byte[] ax25, String uid, int defers) {
+        if (defers == 0 && !pendingUvproCotAcks.add(uid)) {
+            Log.d(TAG, "CoT ACK already queued uid=" + uid);
+            return;
+        }
+        long delay = defers == 0 ? UVPRO_COT_ACK_FIRST_DELAY_MS : UVPRO_COT_ACK_POLL_MS;
+        cotRetryExecutor.schedule(() -> {
+            try {
+                if (!tx.isConnected()) {
+                    pendingUvproCotAcks.remove(uid);
+                    return;
+                }
+                if (RfTxArbitrator.get().shouldDeferRfChatAck()
+                        && defers < UVPRO_COT_ACK_MAX_DEFERS) {
+                    scheduleQuietCotAck(tx, ax25, uid, defers + 1);
+                    return;
+                }
+                pendingUvproCotAcks.remove(uid);
+                tx.sendKissFrame(ax25);
+                Log.d(TAG, "CoT ACK sent uid=" + uid + " after " + defers + " channel waits");
+            } catch (Exception e) {
+                pendingUvproCotAcks.remove(uid);
+                Log.w(TAG, "Failed to send CoT ACK uid=" + uid, e);
+            }
+        }, delay, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    private static final long INBOUND_COT_DUPLICATE_WINDOW_MS = 120_000L;
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> recentInboundCotByUid =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * True when an identical CoT body for this uid was already injected recently, i.e. a sender
+     * retransmit because our ACK was lost.
+     */
+    private boolean isDuplicateInboundCot(String uid, String xml) {
+        if (uid == null || xml == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        String fingerprint = xml.length() + ":" + xml.hashCode();
+        String key = uid + "|" + fingerprint;
+        if (recentInboundCotByUid.size() > 512) {
+            recentInboundCotByUid.entrySet().removeIf(
+                    e -> now - e.getValue() > INBOUND_COT_DUPLICATE_WINDOW_MS);
+        }
+        Long previous = recentInboundCotByUid.put(key, now);
+        return previous != null && now - previous <= INBOUND_COT_DUPLICATE_WINDOW_MS;
+    }
+
+    /**
+     * @param inboundTransport radio the CoT arrived on; the ACK is sent back over it. Null falls
+     *                         back to the active transmit radio.
+     */
+    public void injectCompressedCot(byte[] compressed, int pathLen,
+                                    com.uvpro.plugin.protocol.RfInboundTransport inboundTransport) {
         try {
             String xml = CotBuilder.decompressCot(compressed);
             if (xml == null || xml.isEmpty()) {
@@ -1381,6 +1664,17 @@ public class CotBridge {
                 return;
             }
             CotBuilder.stripDirectedDestinations(event);
+            if (isDuplicateInboundCot(event.getUID(), xml)) {
+                Log.d(TAG, "Duplicate inbound CoT (retransmit) uid=" + event.getUID()
+                        + " type=" + event.getType() + " — ACK only, not processed again");
+                sendCotAckForInboundEvent(event, inboundTransport);
+                return;
+            }
+            if ("t-x-d-d".equals(event.getType())) {
+                applyInboundRadioDelete(event);
+                sendCotAckForInboundEvent(event, inboundTransport);
+                return;
+            }
             Log.d(TAG, "Injecting decompressed CoT: type=" + event.getType()
                     + " uid=" + event.getUID());
             Log.d(TAG, "CoT received: type=" + event.getType() + " via "
@@ -1391,7 +1685,7 @@ public class CotBridge {
             if (GrgSettingsShare.isGrgSettingsCot(event)) {
                 handleInboundGrgSettingsCot(event);
                 maybeRelayInboundRadioCotToTak(event);
-                sendCotAckForInboundEvent(event);
+                sendCotAckForInboundEvent(event, inboundTransport);
                 return;
             }
             if (isGeoChatCotType(event.getType())) {
@@ -1399,25 +1693,28 @@ public class CotBridge {
             } else {
                 dispatchCotEvent(event);
             }
+            noteRadioSyncedMapItem(event);
             maybeRelayInboundRadioCotToTak(event);
             MapView pingMv = MapView.getMapView();
             if (pingMv != null) {
                 PingReplyNotifier.maybeNotifyPingReplyFromCot(
                         pingMv.getContext(), event);
             }
-            sendCotAckForInboundEvent(event);
+            sendCotAckForInboundEvent(event, inboundTransport);
         } catch (Exception e) {
             Log.e(TAG, "Error injecting compressed CoT", e);
         }
     }
 
-    private void sendCotAckForInboundEvent(CotEvent event) {
+    private void sendCotAckForInboundEvent(CotEvent event,
+                                           com.uvpro.plugin.protocol.RfInboundTransport inboundTransport) {
         if (event == null) {
             return;
         }
         String ackUid = event.getUID();
+        final BtConnectionManager ackTx = resolveAckManager(inboundTransport);
         if (ackUid == null || ackUid.trim().isEmpty()
-                || btManager == null || !btManager.isConnected()) {
+                || ackTx == null || !ackTx.isConnected()) {
             return;
         }
         try {
@@ -1429,9 +1726,9 @@ public class CotBridge {
             if (ackBytes != null) {
                 Ax25Frame ackFrame = Ax25Frame.createUVProFrame(localCallsign, 0, ackBytes);
                 byte[] ax25 = ackFrame.encode();
-                if (btManager instanceof MeshBtConnectionManager) {
+                if (ackTx instanceof MeshBtConnectionManager) {
                     final byte[] paced = ax25;
-                    final BtConnectionManager tx = btManager;
+                    final BtConnectionManager tx = ackTx;
                     final String uid = ackUid.trim();
                     cotRetryExecutor.schedule(() -> {
                         try {
@@ -1450,8 +1747,7 @@ public class CotBridge {
                         }
                     }, MESH_COT_ACK_QUIET_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                 } else {
-                    btManager.sendKissFrame(ax25);
-                    Log.d(TAG, "CoT ACK sent uid=" + ackUid.trim());
+                    scheduleQuietCotAck(ackTx, ax25, ackUid.trim(), 0);
                 }
             }
         } catch (Exception e) {
@@ -2007,11 +2303,44 @@ public class CotBridge {
         sendCotOverRadioInternal(event, false);
     }
 
+    /**
+     * A user-dropped friendly marker ({@code a-f-*}, not an SA/PLI) carries no {@code __group}, so
+     * the receiver drew it with no team ({@code team=NULL}). Stamp the sender's ATAK team on a
+     * copy so the receiver keeps team and colour. The original event is never changed.
+     */
+    private CotEvent withFriendlyMarkerTeam(CotEvent event) {
+        try {
+            String type = event == null ? null : event.getType();
+            if (type == null || !type.startsWith("a-f-") || isSelfPliBeacon(event)
+                    || event.getDetail() == null
+                    || event.getDetail().getFirstChildByName(0, "__group") != null) {
+                return event;
+            }
+            CotEvent copy = CotEvent.parse(event.toString());
+            if (copy == null || copy.getDetail() == null) {
+                return event;
+            }
+            CotDetail group = new CotDetail("__group");
+            group.setAttribute("name", resolveLocalAtakTeamForOutbound());
+            group.setAttribute("role", "Team Member");
+            copy.getDetail().addChild(group);
+            Log.d(TAG, "Friendly marker uid=" + event.getUID() + " type=" + type
+                    + " — added sender team " + group.getAttribute("name"));
+            return copy;
+        } catch (Exception e) {
+            Log.w(TAG, "withFriendlyMarkerTeam failed uid="
+                    + (event == null ? null : event.getUID()), e);
+            return event;
+        }
+    }
+
     private void sendCotOverRadioInternal(CotEvent event, boolean registerRetry) {
         if (btManager == null || !btManager.isConnected()) {
             Log.w(TAG, "Not connected to radio — cannot send CoT");
             return;
         }
+        event = withFriendlyMarkerTeam(event);
+        noteRadioSyncedMapItem(event);
 
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
         boolean holdMeshTx = false;
@@ -2961,6 +3290,8 @@ public class CotBridge {
             Log.w(TAG, "Failed to register shared map item relay listener", e);
         }
 
+        registerItemRemovedListener();
+
         preSendProcessor = (event, toUIDs) -> {
             if (event == null) return;
 
@@ -3759,6 +4090,7 @@ public class CotBridge {
             }
             localCotBroadcastReceiver = null;
         }
+        unregisterItemRemovedListener();
         if (sharedMapItemListener != null && mapView != null) {
             try {
                 mapView.getMapEventDispatcher().removeMapEventListener(

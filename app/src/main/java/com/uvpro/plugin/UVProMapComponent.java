@@ -14,6 +14,7 @@ import com.atakmap.android.dropdown.DropDownMapComponent;
 import com.atakmap.android.ipc.AtakBroadcast;
 import com.uvpro.plugin.beacon.MeshBeaconLimits;
 import com.uvpro.plugin.beacon.SmartBeacon;
+import com.atakmap.android.maps.MapGroup;
 import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.maps.PointMapItem;
@@ -173,6 +174,11 @@ public class UVProMapComponent extends DropDownMapComponent {
     private MapEventDispatcher.MapEventDispatchListener mapItemClickListener;
     private Handler beaconHandler;
     private Runnable beaconRunnable;
+    private volatile boolean beaconTimerArmed;
+    private long lastBeaconCycleMs;
+    private boolean beaconCycleMeshLimited;
+    private boolean beaconCycleScheduled;
+    private static final long BEACON_TIMER_ERROR_RETRY_MS = 60_000L;
     private Runnable beaconWaitForPositionRunnable;
     private boolean forceFirstPostConnectBeacon = false;
     private static final long STARTUP_BEACON_DELAY_MS = 30_000L;
@@ -351,7 +357,7 @@ try {
             }
             String display = sanitizeRepeaterDisplayName(advert.name);
             persistRepeaterAdvert(advert, display);
-            if (cotBridge != null && (isMeshRepeaterDisplayEnabled()
+            if (cotBridge != null && meshMarkersVisible() && (isMeshRepeaterDisplayEnabled()
                     || meshBtConnectionManager.isNodeDiscoverSessionActive())) {
                 renderMeshRepeaterMarker(display, advert.pubKeyHex, advert.latitude, advert.longitude,
                         advert.advertTimestampSec);
@@ -363,7 +369,7 @@ try {
             }
             String display = sanitizeNodeDisplayName(advert.name, advert.pubKeyHex);
             persistNodeAdvert(advert, display);
-            if (cotBridge != null && isMeshNodeDisplayEnabled()) {
+            if (cotBridge != null && meshMarkersVisible() && isMeshNodeDisplayEnabled()) {
                 renderMeshNodeMarker(
                         display,
                         advert.pubKeyHex,
@@ -378,6 +384,9 @@ try {
         meshBtConnectionManager.addMeshAdvertListener(meshAdvertListener);
         SharedPreferences meshPrefs = PreferenceManager.getDefaultSharedPreferences(view.getContext());
         meshMapPrefsListener = (prefs, key) -> {
+            if (com.uvpro.plugin.ui.RadioProfile.PREF.equals(key)) {
+                applyRadioProfileSideEffects();
+            }
             if (PREF_MESH_SHOW_REPEATERS.equals(key)
                     && !prefs.getBoolean(PREF_MESH_SHOW_REPEATERS, true)) {
                 clearTrackedMeshMarkers(meshRepeaterMapUids);
@@ -398,12 +407,13 @@ try {
         meshPrefs.registerOnSharedPreferenceChangeListener(meshMapPrefsListener);
         restorePersistedRepeaters();
         restorePersistedNodes();
+        view.postDelayed(this::applyRadioProfileSideEffects, 4000);
+        view.postDelayed(this::applyAprsMarkerVisibility, 15000);
         radioControlManager = new UVProRadioControlManager(btConnectionManager);
         radioControlManager.start();
 
         // Status overlay: defer install until after GLWidgetsMapComponent is ready
-        view.postDelayed(() -> RadioStatusOverlay.install(context), 2000);
-        view.postDelayed(() -> MeshStatusOverlay.install(context), 2000);
+        view.postDelayed(() -> com.uvpro.plugin.ui.RadioProfile.applyMapIcons(context), 2000);
         btConnectionManager.addListener(new BtConnectionManager.ConnectionListener() {
             @Override
             public void onConnected(android.bluetooth.BluetoothDevice device) {
@@ -600,11 +610,18 @@ try {
 
             if (!handledRepeater && cotBridge != null
                     && CotBridge.isUvproAprsMarker(item)) {
+                if (!com.uvpro.plugin.ui.RadioProfile.shows(
+                        com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO, view.getContext())) {
+                    return;
+                }
                 cotBridge.openAprsDetailsPanel(item);
                 return;
             }
             if (!handledRepeater && cotBridge != null
                     && CotBridge.isUvproMeshMarker(item)) {
+                if (!meshMarkersVisible()) {
+                    return;
+                }
                 try {
                     Intent details = new Intent(MeshDetailsDropDownReceiver.SHOW_MESH_DETAILS);
                     details.putExtra(MeshDetailsDropDownReceiver.EXTRA_TARGET_UID, item.getUID());
@@ -655,6 +672,7 @@ try {
                     } else if (ACTION_BEACON_TRANSPORT_CHANGED.equals(i.getAction())) {
                         Log.d(TAG, "Beacon transport changed — updating CotBridge/ChatBridge");
                         applyActiveTransmitTransportFromPreference();
+                        rescheduleBeaconForTransmitChange();
                     }
                 }
             };
@@ -693,6 +711,12 @@ try {
 
         Log.i(TAG, "UV-PRO plugin initialized successfully (callsign="
                 + callsign + ")");
+
+        view.postDelayed(() -> {
+            if (dropDownReceiver != null) {
+                dropDownReceiver.promptForRadioProfileIfNeeded();
+            }
+        }, 2000);
 
         startGpsSpeedListener(view.getContext());
 
@@ -1113,6 +1137,9 @@ try {
 
     private void renderMeshRepeaterMarker(String display, String pubKeyHex, double lat, double lon,
                                           long advertTimestampSec) {
+        if (!meshMarkersVisible()) {
+            return;
+        }
         if (cotBridge == null || mapView == null || !isMeshRepeaterDisplayEnabled()) {
             return;
         }
@@ -1146,7 +1173,7 @@ try {
 
     private void renderMeshNodeMarker(String display, String pubKeyHex, double lat, double lon,
                                       long advertTimestampSec, int advertType, String rawName) {
-        if (cotBridge == null || mapView == null || !isMeshNodeDisplayEnabled()) {
+        if (!meshMarkersVisible() || cotBridge == null || mapView == null || !isMeshNodeDisplayEnabled()) {
             return;
         }
         String mapUid = "MESHCORE-NODE-" + sanitizeRepeaterUidSuffix(pubKeyHex);
@@ -1362,6 +1389,10 @@ try {
                     continue;
                 }
                 kept.put(o);
+                if (!meshMarkersVisible()) {
+                    removeMapUid("MESHCORE-RPTR-" + sanitizeRepeaterUidSuffix(pubKey));
+                    continue;
+                }
                 if (isMeshRepeaterDisplayEnabled()) {
                     renderMeshRepeaterMarker(display, pubKey, lat, lon, lastAdvertSec);
                 }
@@ -1403,6 +1434,10 @@ try {
                     continue;
                 }
                 byKey.put(pubKey, o);
+                if (!meshMarkersVisible()) {
+                    removeMapUid("MESHCORE-NODE-" + sanitizeRepeaterUidSuffix(pubKey));
+                    continue;
+                }
                 if (isMeshNodeDisplayEnabled()) {
                     renderMeshNodeMarker(display, pubKey, lat, lon, lastAdvertSec, advertType, rawName);
                 }
@@ -1441,6 +1476,21 @@ try {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private void removeMapUid(String uid) {
+        if (mapView == null || uid == null || uid.isEmpty()) {
+            return;
+        }
+        mapView.post(() -> {
+            try {
+                MapItem item = mapView.getRootGroup().deepFindUID(uid);
+                if (item != null && item.getGroup() != null) {
+                    item.getGroup().removeItem(item);
+                }
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private void clearTrackedMeshMarkers(Set<String> trackedUids) {
@@ -2432,27 +2482,36 @@ try {
         stopBeaconTimer();
         smartBeacon.reset();
         forceFirstPostConnectBeacon = true;
+        beaconTimerArmed = true;
 
         beaconHandler = new Handler(Looper.getMainLooper());
         beaconRunnable = new Runnable() {
             @Override
             public void run() {
-                if (forceFirstPostConnectBeacon) {
-                    if (!hasValidSelfPosition()) {
-                        Log.d(TAG, "Startup beacon delayed — waiting for valid self marker position");
-                        beaconHandler.postDelayed(this, STARTUP_POSITION_POLL_MS);
-                        return;
+                long nextMs = STARTUP_POSITION_POLL_MS;
+                try {
+                    if (forceFirstPostConnectBeacon) {
+                        if (!hasValidSelfPosition()) {
+                            Log.d(TAG, "Startup beacon delayed — waiting for valid self marker position");
+                        } else if (sendBeaconIfConnected(true)) {
+                            forceFirstPostConnectBeacon = false;
+                            nextMs = getBeaconTimerDelayMs();
+                        }
+                    } else {
+                        sendBeaconIfConnected(false);
+                        nextMs = getBeaconTimerDelayMs();
                     }
-                    if (!sendBeaconIfConnected(true)) {
-                        beaconHandler.postDelayed(this, STARTUP_POSITION_POLL_MS);
-                        return;
-                    }
-                    forceFirstPostConnectBeacon = false;
-                } else {
-                    sendBeaconIfConnected(false);
+                } catch (Throwable t) {
+                    // An exception must never end the periodic chain; retry on the next interval.
+                    Log.e(TAG, "Beacon timer cycle failed — rescheduling", t);
+                    nextMs = BEACON_TIMER_ERROR_RETRY_MS;
                 }
-                long nextCheckMs = getBeaconTimerDelayMs();
-                beaconHandler.postDelayed(this, nextCheckMs);
+                if (beaconRunnable == this && beaconHandler != null) {
+                    lastBeaconCycleMs = System.currentTimeMillis();
+                    beaconCycleMeshLimited = MeshBeaconLimits.isActive(getBeaconPrefsContext());
+                    beaconCycleScheduled = nextMs >= 10_000L;
+                    beaconHandler.postDelayed(this, nextMs);
+                }
             }
         };
         if (hasValidSelfPosition()) {
@@ -2483,7 +2542,9 @@ try {
     /** When MeshCore TX is preferred, do not anchor the 30s startup beacon to a UV-PRO connect. */
     private boolean shouldStartBeaconTimerOnUvProConnect() {
         String preferred = readPreferredTransmitTransportPref();
-        if ("mesh".equals(preferred)) {
+        boolean meshWillArm = meshBtConnectionManager != null
+                && meshBtConnectionManager.isConnected() && beaconTimerArmed;
+        if ("mesh".equals(preferred) && meshWillArm) {
             Log.d(TAG, "UV-PRO connected — deferring beacon timer (MeshCore TX preferred)");
             return false;
         }
@@ -2514,6 +2575,38 @@ try {
         }
         beaconWaitForPositionRunnable = null;
         forceFirstPostConnectBeacon = false;
+        beaconTimerArmed = false;
+    }
+
+    /**
+     * A queued beacon was timed for the old transmit radio. When the MeshCore interval cap
+     * starts or stops applying, re-time it from the last beacon so UV-PRO does not wait out a
+     * MeshCore 30 minute delay and MeshCore does not send on a UV-PRO 5 minute delay.
+     */
+    private void rescheduleBeaconForTransmitChange() {
+        if (!beaconTimerArmed || beaconHandler == null || beaconRunnable == null
+                || forceFirstPostConnectBeacon || !beaconCycleScheduled) {
+            return;
+        }
+        boolean meshLimited = MeshBeaconLimits.isActive(getBeaconPrefsContext());
+        if (meshLimited == beaconCycleMeshLimited) {
+            return;
+        }
+        long dueMs = lastBeaconCycleMs + getBeaconTimerDelayMs();
+        long delayMs = Math.max(5_000L, dueMs - System.currentTimeMillis());
+        beaconCycleMeshLimited = meshLimited;
+        beaconHandler.removeCallbacks(beaconRunnable);
+        beaconHandler.postDelayed(beaconRunnable, delayMs);
+        Log.d(TAG, "Beacon transmit radio changed — next beacon in " + (delayMs / 1000L) + "s"
+                + (meshLimited ? " (MeshCore interval cap)" : ""));
+    }
+
+    /** Arms the beacon timer if a transport is up but no timer is running (never restarts one). */
+    private void ensureBeaconTimerArmed() {
+        if (!beaconTimerArmed && isAnyTransportConnected()) {
+            Log.d(TAG, "Beacon timer was not armed with a transport connected — arming");
+            startBeaconTimer();
+        }
     }
 
     private long getBeaconTimerDelayMs() {
@@ -2761,6 +2854,7 @@ try {
     }
 
     private void applyActiveTransmitTransportFromPreference() {
+        ensureBeaconTimerArmed();
         BtConnectionManager active = resolveBeaconTransportManager();
         if (cotBridge != null) {
             cotBridge.setBtManager(active);
@@ -2950,13 +3044,72 @@ try {
         }
     }
 
+    private boolean meshMarkersVisible() {
+        Context ctx = mapView != null ? mapView.getContext() : pluginContext;
+        return com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, ctx);
+    }
+
+    /** Hide APRS dots and trails when UV-PRO is off. The items stay so they can come back. */
+    private void applyAprsMarkerVisibility() {
+        if (mapView == null) {
+            return;
+        }
+        final boolean show = com.uvpro.plugin.ui.RadioProfile.shows(
+                com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.UVPRO,
+                mapView.getContext());
+        mapView.post(() -> setAprsVisibilityRecursive(mapView.getRootGroup(), show));
+        if (aprsTrackManager != null) {
+            aprsTrackManager.setTracksVisible(show);
+        }
+    }
+
+    private void setAprsVisibilityRecursive(MapGroup group, boolean show) {
+        if (group == null) {
+            return;
+        }
+        try {
+            for (MapItem item : new java.util.ArrayList<>(group.getItems())) {
+                if (item != null && (CotBridge.isUvproAprsMarker(item)
+                        || item.getMetaBoolean(
+                        com.uvpro.plugin.aprs.AprsTrackManager.META_UVPRO_APRS_TRACK, false))) {
+                    item.setVisible(show);
+                }
+            }
+            for (MapGroup child : group.getChildGroups()) {
+                setAprsVisibilityRecursive(child, show);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "setAprsVisibilityRecursive failed", e);
+        }
+    }
+
+    /** Disconnect a hidden radio and take its markers off the map. The cache stays. */
+    private void applyRadioProfileSideEffects() {
+        com.uvpro.plugin.ui.RadioProfile.applyMapIcons(pluginContext);
+        com.uvpro.plugin.ui.RadioProfile.quietHiddenRadios(
+                btConnectionManager, meshBtConnectionManager);
+        com.uvpro.plugin.ui.RadioProfile.refreshOpenPanel();
+        applyAprsMarkerVisibility();
+        if (!meshMarkersVisible()) {
+            cancelMeshBootAutoConnectSchedules();
+            clearTrackedMeshMarkers(meshRepeaterMapUids);
+            clearTrackedMeshMarkers(meshNodeMapUids);
+            restorePersistedRepeaters();
+            restorePersistedNodes();
+            return;
+        }
+        restorePersistedRepeaters();
+        restorePersistedNodes();
+    }
+
     /**
      * Mesh boot policy: try the last saved mesh target after 7s unless UV-PRO connects first
      * (then wait 2s after radio connect). The 7s fallback waits out an in-flight UV-PRO connect.
      */
     private void scheduleMeshBootAutoConnect(MapView view) {
         cancelMeshBootAutoConnectSchedules();
-        if (view == null || meshBtConnectionManager == null) {
+        if (view == null || meshBtConnectionManager == null || !meshMarkersVisible()) {
             return;
         }
         meshBootScheduledAtMs = System.currentTimeMillis();
@@ -2999,7 +3152,7 @@ try {
     }
 
     private void scheduleMeshBootAfterRadioConnect(MapView view) {
-        if (view == null || meshBtConnectionManager == null) {
+        if (view == null || meshBtConnectionManager == null || !meshMarkersVisible()) {
             return;
         }
         if (meshBtConnectionManager.isConnected()) {
