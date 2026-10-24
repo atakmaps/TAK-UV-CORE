@@ -439,9 +439,9 @@ public class UVProDropDownReceiver extends DropDownReceiver
     private PreferredTransmitTransport preferredTransmitTransport = PreferredTransmitTransport.NONE;
     private boolean transmitFailoverActive = false;
     /**
-     * True once the user chose a transmit radio or both radios were up this session. Until then the
-     * shown selection may only be a connectivity default, so a late-connecting second radio must
-     * not replace it with the stored last-session preference.
+     * True once the user chose a transmit radio or both radios were up this plugin session. Until
+     * then the shown selection is only a connectivity default, and the first time both radios are
+     * up it becomes UV-PRO. After that a reconnect keeps the user's selection.
      */
     private boolean transmitSelectionConfirmed = false;
     private static final long TRANSMIT_FAILOVER_DELAY_MS = 5 * 60 * 1000L;
@@ -6751,8 +6751,8 @@ public class UVProDropDownReceiver extends DropDownReceiver
     }
 
     /**
-     * Sets transmit toggles from connectivity: both up → last-session preference; single up → that
-     * transport; none up → UV-PRO default.
+     * Sets transmit toggles from connectivity: both up → UV-PRO the first time after plugin load,
+     * the user's stored selection afterwards; single up → that transport; none up → UV-PRO default.
      */
     private void applyTransmitTogglesForConnectivity(boolean logChange, boolean startupContext) {
         ensureTransmitPreferencesLoaded();
@@ -6760,26 +6760,13 @@ public class UVProDropDownReceiver extends DropDownReceiver
         boolean meshUp = meshConnected;
 
         if (uvUp && meshUp) {
-            boolean keepShownSelection = !startupContext && !transmitFailoverActive
-                    && !transmitSelectionConfirmed
-                    && meshTransmitEnabled != uvproTransmitEnabled;
+            // First time both radios are up since the plugin loaded and the user has not picked a
+            // radio: default to UV-PRO. Later reconnects keep the user's selection.
+            boolean loadDefaultToUvpro = !transmitSelectionConfirmed;
             transmitSelectionConfirmed = true;
-            if (keepShownSelection) {
-                // The second radio connected mid-session while connectivity had forced the shown
-                // selection. Keep what is shown instead of jumping to the stale last-session
-                // preference.
-                preferredTransmitTransport = meshTransmitEnabled
-                        ? PreferredTransmitTransport.MESH
-                        : PreferredTransmitTransport.UVPRO;
+            if (loadDefaultToUvpro) {
+                preferredTransmitTransport = PreferredTransmitTransport.UVPRO;
                 persistPreferredTransmitTransport();
-                persistTransmitTogglePreferences();
-                syncTransmitSwitchesUi();
-                applyActiveTransmitTransport();
-                if (logChange) {
-                    appendLog("Transmit: both radios connected — keeping "
-                            + formatPreferredTransmitLabel());
-                }
-                return;
             }
             applyTogglesFromPreferredTransport();
             transmitFailoverActive = false;
