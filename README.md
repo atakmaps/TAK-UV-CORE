@@ -360,7 +360,7 @@ After reinstalling, open ATAK → Menu → Tools → **UV-PRO** and reconnect yo
 ## GitHub releases and signing
 
 - **Third-party (TPC) signing:** The APK that is fully aligned with **stock ATAK-CIV** and the usual install rules is the one built and signed on the **TAK Product Center third-party pipeline** (takrepo). It may show the standard indicator that the plugin was signed with the third-party service. No extra code is required in this repo for that — trust comes from the **pipeline signature**, not a flag in Java.
-- **GitHub Releases:** Each [release](https://github.com/atakmaps/UV-PRO/releases) can attach the **same civ-release APK** produced for that version (ideally the TPC output). You can also build `assembleCivRelease` yourself (see below); for **public distribution**, prefer the **TPC-signed** binary when you have it.
+- **GitHub Releases:** Each [release](https://github.com/atakmaps/TAK-UV-CORE/releases) can attach the **same civ-release APK** produced for that version (ideally the TPC output). You can also build `assembleCivRelease` yourself (see below); for **public distribution**, prefer the **TPC-signed** binary when you have it.
 - **Local `assembleCivRelease`:** ProGuard/R8 needs an **ATAK apply-mapping** file. This repo sets `atak.proguard.mapping` automatically: if you place the real `proguard-civ-release-mapping.txt` from a TPC/takrepo build in `app/libs/atak-civ/`, that is used; otherwise a **placeholder empty mapping** (`tools/empty-atak-applymapping.txt`) is used so the build completes. A build with the placeholder is fine for **CI smoke tests**; for **field use**, prefer a release built with the **official ATAK mapping** and/or the **TPC APK**.
 - The `android` block in `app/build.gradle` sets `bundle { storeArchive { enable = false } }` as required by **atak-takdev** `takdevLint` for release signing.
 
@@ -403,8 +403,8 @@ Open `gradle.properties` and set `org.gradle.java.home` to your JDK 17 if needed
 
 ```bash
 # Clone the repo
-git clone https://github.com/atakmaps/UV-PRO.git
-cd UV-PRO
+git clone https://github.com/atakmaps/TAK-UV-CORE.git
+cd TAK-UV-CORE
 
 # Linux/macOS
 ./gradlew assembleCivDebug
