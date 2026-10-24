@@ -15,7 +15,7 @@
             android:id="@+id/header_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="UV-PRO-MESH"
+            android:text="UV-CORE"
             android:textColor="#FFFFFFFF"
             android:textSize="18sp"
             android:textStyle="bold"

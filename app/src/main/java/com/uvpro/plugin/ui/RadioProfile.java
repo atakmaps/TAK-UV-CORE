@@ -157,7 +157,7 @@ public final class RadioProfile {
         if (UVPRO.equals(profile)) {
             return "UV-PRO";
         }
-        return "UV-PRO-MESH";
+        return "UV-CORE";
     }
 
     private static void setSections(View root, int[] ids, boolean show) {

@@ -4072,7 +4072,7 @@ public class SettingsFragment extends PluginPreferenceFragment
 
     @Override
     public String getSubTitle() {
-        return "UV-PRO Settings";
+        return "UV-CORE Settings";
     }
 
     /**
