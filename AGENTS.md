@@ -15,7 +15,7 @@ UV-PRO is an ATAK plugin, package `com.uvpro.plugin`, target ATAK-CIV **5.6.0**.
 - BTECH UV-PRO over Bluetooth SPP / KISS (`BtConnectionManager`)
 - MeshCore companion over BLE (`MeshBtConnectionManager`)
 
-Both share one `PacketRouter`, `ChatBridge`, and `CotBridge`. Wi‑Fi/TAK SA relay is a third path. GitHub: `atakmaps/TAK-UV-PRO`.
+Both share one `PacketRouter`, `ChatBridge`, and `CotBridge`. Wi‑Fi/TAK SA relay is a third path. GitHub: `atakmaps/TAK-UV-CORE`.
 
 `atakmaps/TAK-MESHCORE` is the older MeshCore-only plugin. It stays published until the maintainer freezes it. Do not edit that repository unless the maintainer asks. MeshCore fixes for this product go in this tree.
 
