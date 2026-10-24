@@ -8,7 +8,7 @@
 
 ### 0.1 Purpose & privacy
 
-This document and `Plugins/Darksteal/HANDOFF.md` are **local operator notes** for AI/human agents. They are **not** intended for the public GitHub repo. The plugin repo intentionally **gitignores** `HANDOFF.md`; keep this file under `Plugins/Handoff Docs/` (or equivalent) so it does not get pushed with `TAK-UV-PRO`.
+This document and `Plugins/Darksteal/HANDOFF.md` are **local operator notes** for AI/human agents. They are **not** intended for the public GitHub repo. The plugin repo intentionally **gitignores** `HANDOFF.md`; keep this file under `Plugins/Handoff Docs/` (or equivalent) so it does not get pushed with `TAK-UV-CORE`.
 
 ### 0.2 Which document for which question
 
@@ -94,7 +94,7 @@ Use when a **signed** `ATAK-Plugin-UVPro-*-tpc-5.5.1-civ-release.apk` exists.
 | **Current version** | **1.9.51** (`ext.PLUGIN_VERSION` in root `build.gradle`) |
 | **ATAK target** | **5.5.1** (CIV) |
 | **Example versionCode** | `1.9.7` → **10907** (formula: major×10000 + minor×100 + patch) |
-| **GitHub** | `https://github.com/atakmaps/TAK-UV-PRO` |
+| **GitHub** | `https://github.com/atakmaps/TAK-UV-CORE` |
 | **Plugin repo HEAD (trust / Fortify / AAPT fixes)** | **`74ca716`** — PKCS#12 key in `strings.xml` Base64; `textPassword` inputType |
 | **Last TPC-signed drop verified** | **`paul-c-besing-mil-army-mil-20260510-080610.zip`** → `ATAK-Plugin-UVPro-1.9.7-tpc-5.5.1-civ-release.apk` |
 | **Field verification** | ATAK **green update server / sync** on production phone after **1.9.7** TPC install (May 2026) |
