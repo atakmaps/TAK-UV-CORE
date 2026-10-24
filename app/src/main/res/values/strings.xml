@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">UV-PRO</string>
-    <string name="plugin_name">UV-PRO</string>
-    <string name="plugin_description">UV-PRO Radio Bridge for ATAK — Off-grid position sharing and chat.</string>
+    <string name="app_name">UV-CORE</string>
+    <string name="plugin_name">UV-CORE</string>
+    <string name="plugin_description">UV-CORE Radio Bridge for ATAK — Off-grid position sharing and chat.</string>
 
     <!-- Connection UI -->
     <string name="btn_scan">Scan for Radios</string>
