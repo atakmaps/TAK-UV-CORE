@@ -2464,6 +2464,11 @@ public class CotBridge {
         try {
             PendingOutboundCot pending = pendingOutboundCots.get(cotUid);
             if (pending == null) return;
+            if (btManager != null && btManager.isRadioSilenceEnabled()) {
+                Log.d(TAG, "CoT retry deferred uid=" + cotUid + " — Radio Silence active");
+                scheduleCotRetryCheck(cotUid);
+                return;
+            }
             if (pending.retryCount < COT_MAX_RETRIES) {
                 pending.retryCount++;
                 Log.d(TAG, "CoT retry " + pending.retryCount + "/" + COT_MAX_RETRIES
