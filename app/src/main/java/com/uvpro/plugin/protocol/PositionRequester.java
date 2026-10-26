@@ -64,22 +64,17 @@ public final class PositionRequester {
         }
         String atakTarget = targetCallsign.trim();
         com.uvpro.plugin.cot.CotBridge bridge = cotBridge;
+        BtConnectionManager tx = resolveTransport(contactUid);
+        boolean radioUp = tx != null && tx.isConnected();
+        boolean wifiOk = false;
         if (bridge != null && bridge.canSendPingOverWifiNetwork()
-                && preferWifiPingForContact(contactUid)) {
-            boolean wifiOk = bridge.sendPingOverWifiNetwork(atakTarget);
+                && (preferWifiPingForContact(contactUid) || !radioUp)) {
+            wifiOk = bridge.sendPingOverWifiNetwork(atakTarget);
+        }
+        if (!radioUp) {
             if (wifiOk) {
                 PingReplyNotifier.noteDirectedPingSent(ctx, atakTarget, "ATAK WiFi");
                 return true;
-            }
-        }
-        BtConnectionManager tx = resolveTransport(contactUid);
-        if (tx == null || !tx.isConnected()) {
-            if (bridge != null && bridge.canSendPingOverWifiNetwork()) {
-                boolean wifiOk = bridge.sendPingOverWifiNetwork(atakTarget);
-                if (wifiOk) {
-                    PingReplyNotifier.noteDirectedPingSent(ctx, atakTarget, "ATAK WiFi");
-                }
-                return wifiOk;
             }
             Log.w(TAG, "Request position: no connected radio transport");
             return false;
@@ -112,9 +107,12 @@ public final class PositionRequester {
             boolean ok = tx.sendKissFrame(frame.encode());
             if (ok) {
                 String transportLabel = tx == meshTransport ? "MeshCore" : "UV-PRO";
+                if (wifiOk) {
+                    transportLabel += " + ATAK WiFi";
+                }
                 PingReplyNotifier.noteDirectedPingSent(ctx, atakTarget, transportLabel);
             }
-            return ok;
+            return ok || wifiOk;
         } catch (Exception e) {
             Log.e(TAG, "requestPosition failed", e);
             return false;
