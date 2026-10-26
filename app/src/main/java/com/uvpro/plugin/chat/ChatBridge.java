@@ -93,7 +93,7 @@ public class ChatBridge {
     private CotBridge cotBridge;
     private BtConnectionManager btManager;
     private EncryptionManager encryptionManager;
-    private String localCallsign = "OPENRL";
+    private volatile String localCallsign = "OPENRL";
 
     /** Whether to relay outgoing chat to radio */
     private boolean relayOutgoing = true;
@@ -308,6 +308,21 @@ public class ChatBridge {
 
     public void setEncryptionManager(EncryptionManager em) {
         this.encryptionManager = em;
+    }
+
+    private String localCallsign() {
+        try {
+            com.atakmap.android.maps.PointMapItem self = mapView.getSelfMarker();
+            if (self != null) {
+                String live = self.getMetaString("callsign", null);
+                if (live != null && !live.trim().isEmpty()
+                        && !"UNKNOWN".equalsIgnoreCase(live.trim())) {
+                    localCallsign = live.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return localCallsign;
     }
 
     public void setLocalCallsign(String callsign) {
@@ -705,8 +720,8 @@ public class ChatBridge {
         if (out == null) {
             return;
         }
-        if (localCallsign != null) {
-            addSelfCallsignVariants(out, localCallsign);
+        if (localCallsign() != null) {
+            addSelfCallsignVariants(out, localCallsign());
         }
         try {
             if (mapView != null && mapView.getSelfMarker() != null) {
@@ -2554,7 +2569,7 @@ public class ChatBridge {
         if (isLikelyGroupConversationThread(conversationId)) {
             String wrapped = wrapGatewayMessage("", conversationId, lineUid, msg);
             Log.i(TAG, "Plugin GeoChat group bundle → compact gateway relay lineUid=" + lineUid);
-            sendChatOverRadio(localCallsign, conversationId, wrapped, lineUid);
+            sendChatOverRadio(localCallsign(), conversationId, wrapped, lineUid);
             return true;
         }
 
@@ -2589,7 +2604,7 @@ public class ChatBridge {
                 wireRoom = dmWireDest;
             }
         }
-        sendChatOverRadio(localCallsign, wireRoom, outbound, lineUid);
+        sendChatOverRadio(localCallsign(), wireRoom, outbound, lineUid);
         return true;
     }
 
@@ -2730,7 +2745,7 @@ public class ChatBridge {
                     String rfRoom = toUid != null && !toUid.isEmpty()
                             ? toUid
                             : chatRoom;
-                    sendChatOverRadio(localCallsign, rfRoom, wrapped, lineUid);
+                    sendChatOverRadio(localCallsign(), rfRoom, wrapped, lineUid);
                 } else {
                     String outbound = message;
                     String wireRoom = chatRoom;
@@ -2743,7 +2758,7 @@ public class ChatBridge {
                             wireRoom = dmWireDest;
                         }
                     }
-                    sendChatOverRadio(localCallsign, wireRoom, outbound, lineUid);
+                    sendChatOverRadio(localCallsign(), wireRoom, outbound, lineUid);
                 }
                 return;
             }
@@ -2994,7 +3009,7 @@ public class ChatBridge {
         }
         Log.d(TAG, "Relay outbound GeoChat (compact PreSend/CommsLogger) room=" + chatRoom
                 + " lineUid=" + lineUid);
-        sendChatOverRadio(localCallsign, rfRoom, outbound, lineUid);
+        sendChatOverRadio(localCallsign(), rfRoom, outbound, lineUid);
     }
 
     /**
@@ -3057,7 +3072,7 @@ public class ChatBridge {
                 }
             }
             Ax25Frame frame = Ax25Frame.createUVProFrame(
-                    localCallsign, 0, packetBytes);
+                    localCallsign(), 0, packetBytes);
             byte[] ax25 = frame.encode();
 
             Log.d(TAG, "Sending chat over radio: " + ax25.length + " bytes");
@@ -3120,7 +3135,7 @@ public class ChatBridge {
         } catch (Exception ignored) {
         }
         if (senderUid == null || senderUid.trim().isEmpty()) {
-            senderUid = syntheticAndroidUid(localCallsign);
+            senderUid = syntheticAndroidUid(localCallsign());
         }
         if (senderUid == null || senderUid.trim().isEmpty()) {
             senderUid = "ANDROID-UNKNOWN";
@@ -3260,7 +3275,7 @@ public class ChatBridge {
         }
         Log.d(TAG, "Inbound native MeshCore DM from " + fromCallsign
                 + " (" + senderUid + ") len=" + text.trim().length());
-        return injectRadioMessage(fromCallsign, localCallsign, text.trim(), mid);
+        return injectRadioMessage(fromCallsign, localCallsign(), text.trim(), mid);
     }
 
     private String resolveExistingMeshContactUidByPubKeyPrefix(String prefixUpper) {
@@ -3575,7 +3590,7 @@ public class ChatBridge {
                 }
             }
             Ax25Frame frame = Ax25Frame.createUVProFrame(
-                    localCallsign, 0, packetBytes);
+                    localCallsign(), 0, packetBytes);
             BtConnectionManager ackTx = resolveAckManager(wireMessageId);
             if (ackTx == null) {
                 return;
@@ -3652,7 +3667,7 @@ public class ChatBridge {
                     return;
                 }
             }
-            Ax25Frame frame = Ax25Frame.createUVProFrame(localCallsign, 0, packetBytes);
+            Ax25Frame frame = Ax25Frame.createUVProFrame(localCallsign(), 0, packetBytes);
             btManager.sendKissFrame(frame.encode());
         } catch (Exception e) {
             Log.e(TAG, "Retry transmit failed mid=" + wireMid, e);
