@@ -3262,6 +3262,16 @@ public class ChatBridge {
         }
         String senderUid = resolveExistingMeshContactUidByPubKeyPrefix(prefix);
         if (senderUid == null || senderUid.trim().isEmpty()) {
+            // The node delivered a DM from one of its own contacts, so the sender is known to the
+            // radio even when ATAK has no map item for it (no GPS position, Show Nodes off).
+            String created = UVProContactHandler.ensureMeshInboundChatContact(prefix);
+            if (created != null && !created.trim().isEmpty()) {
+                Log.i(TAG, "Created mesh contact for inbound native MeshCore DM prefix=" + prefix
+                        + " uid=" + created);
+                senderUid = created;
+            }
+        }
+        if (senderUid == null || senderUid.trim().isEmpty()) {
             Log.w(TAG, "Dropping inbound native MeshCore DM from unknown prefix=" + prefix
                     + " (not in mesh contacts)");
             return false;
