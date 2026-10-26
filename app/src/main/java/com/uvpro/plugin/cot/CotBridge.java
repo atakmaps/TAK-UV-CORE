@@ -1409,7 +1409,9 @@ public class CotBridge {
     private static final int MAX_RADIO_SYNCED_ITEMS = 400;
     private static final long INBOUND_DELETE_GUARD_MS = 60_000L;
     private static final long LOCAL_DELETE_SETTLE_MS = 3000L;
+    private static final long STALE_EXPIRY_SLACK_MS = 10_000L;
     private final Map<String, String> radioSyncedMapItems = new ConcurrentHashMap<>();
+    private final Map<String, Long> radioSyncedStaleAtMs = new ConcurrentHashMap<>();
     private final Map<String, Long> inboundDeleteGuard = new ConcurrentHashMap<>();
     private volatile boolean radioSyncedItemsLoaded;
     private MapEventDispatcher.MapEventDispatchListener itemRemovedListener;
@@ -1470,6 +1472,14 @@ public class CotBridge {
         if (radioSyncedMapItems.size() >= MAX_RADIO_SYNCED_ITEMS
                 && !radioSyncedMapItems.containsKey(trimUid)) {
             radioSyncedMapItems.clear();
+            radioSyncedStaleAtMs.clear();
+        }
+        try {
+            if (event.getStale() != null) {
+                radioSyncedStaleAtMs.put(trimUid, event.getStale().getMilliseconds());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "noteRadioSyncedMapItem stale time unavailable uid=" + trimUid, e);
         }
         if (!type.equals(radioSyncedMapItems.put(trimUid, type))) {
             persistRadioSyncedItems();
@@ -1478,6 +1488,7 @@ public class CotBridge {
 
     private void forgetRadioSyncedMapItem(String uid) {
         loadRadioSyncedItems();
+        radioSyncedStaleAtMs.remove(uid);
         if (radioSyncedMapItems.remove(uid) != null) {
             persistRadioSyncedItems();
         }
@@ -1523,6 +1534,14 @@ public class CotBridge {
                 inboundDeleteGuard.remove(uid);
                 forgetRadioSyncedMapItem(uid);
                 Log.d(TAG, "Removal of uid=" + uid + " came from a received delete — not re-sent");
+                return;
+            }
+            Long staleAt = radioSyncedStaleAtMs.get(uid);
+            if (staleAt != null && System.currentTimeMillis() >= staleAt - STALE_EXPIRY_SLACK_MS) {
+                // ATAK removes an item when its stale time passes. That is expiry, not a user delete,
+                // and must not be sent to the peer that still shows (and may refresh) the item.
+                forgetRadioSyncedMapItem(uid);
+                Log.d(TAG, "Removal of uid=" + uid + " is stale expiry — delete not relayed");
                 return;
             }
             // ATAK sometimes removes and re-adds an item on refresh; only a lasting removal counts.
