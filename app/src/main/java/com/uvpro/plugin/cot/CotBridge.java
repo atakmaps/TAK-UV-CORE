@@ -134,7 +134,7 @@ public class CotBridge {
     private BtConnectionManager btManager;
     /** MeshCore BLE transport — used to send CoT ACKs back over the mesh. */
     private com.uvpro.plugin.bluetooth.MeshBtConnectionManager meshBtManager;
-    private String localCallsign = "OPENRL";
+    private volatile String localCallsign = "OPENRL";
     private EncryptionManager encryptionManager;
     private CommsMapComponent.PreSendProcessor preSendProcessor;
     private BroadcastReceiver localCotBroadcastReceiver;
@@ -281,6 +281,21 @@ public class CotBridge {
 
     public void setMeshBtManager(com.uvpro.plugin.bluetooth.MeshBtConnectionManager m) {
         this.meshBtManager = m;
+    }
+
+    private String localCallsign() {
+        try {
+            com.atakmap.android.maps.PointMapItem self = mapView.getSelfMarker();
+            if (self != null) {
+                String live = self.getMetaString("callsign", null);
+                if (live != null && !live.trim().isEmpty()
+                        && !"UNKNOWN".equalsIgnoreCase(live.trim())) {
+                    localCallsign = live.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return localCallsign;
     }
 
     public void setLocalCallsign(String callsign) {
@@ -840,11 +855,11 @@ public class CotBridge {
      * (e.g. {@code ANDROID-SMOKEY_15}) rather than opaque {@code ANDROID-{hex}} UID.
      */
     private boolean directedDestLooksLikeSelf(String dest) {
-        if (dest == null || dest.trim().isEmpty() || localCallsign == null) {
+        if (dest == null || dest.trim().isEmpty() || localCallsign() == null) {
             return false;
         }
         String r = dest.trim();
-        String loc = localCallsign.trim();
+        String loc = localCallsign().trim();
         if (loc.isEmpty()) {
             return false;
         }
@@ -1093,8 +1108,8 @@ public class CotBridge {
             return true;
         }
         String senderCallsign = GeoChatContactListHelper.extractChatSenderCallsign(event);
-        if (senderCallsign != null && localCallsign != null
-                && senderCallsign.trim().equalsIgnoreCase(localCallsign.trim())) {
+        if (senderCallsign != null && localCallsign() != null
+                && senderCallsign.trim().equalsIgnoreCase(localCallsign().trim())) {
             return true;
         }
         return false;
@@ -1317,7 +1332,7 @@ public class CotBridge {
                     referencedOriginalMessageLineUid,
                     readNotDelivered,
                     cachedLocalDeviceUidForGeoChat,
-                    localCallsign);
+                    localCallsign());
             if (event == null || !event.isValid()) {
                 return;
             }
@@ -1724,7 +1739,7 @@ public class CotBridge {
                 ackBytes = encryptionManager.encrypt(ackBytes);
             }
             if (ackBytes != null) {
-                Ax25Frame ackFrame = Ax25Frame.createUVProFrame(localCallsign, 0, ackBytes);
+                Ax25Frame ackFrame = Ax25Frame.createUVProFrame(localCallsign(), 0, ackBytes);
                 byte[] ax25 = ackFrame.encode();
                 if (ackTx instanceof MeshBtConnectionManager) {
                     final byte[] paced = ax25;
@@ -2395,7 +2410,7 @@ public class CotBridge {
                     }
                 }
                 Ax25Frame frame = Ax25Frame.createUVProFrame(
-                        localCallsign, 0, packetBytes);
+                        localCallsign(), 0, packetBytes);
                 byte[] ax25 = frame.encode();
                 if (paceMeshPackets && packetIndex > 0) {
                     final byte[] paced = ax25;
@@ -2765,8 +2780,8 @@ public class CotBridge {
         com.uvpro.plugin.protocol.RfTxArbitrator.get().markOpenRlTxStart();
         try {
             UVProPacket packet = UVProPacket.createGpsPacket(
-                    com.uvpro.plugin.util.CallsignUtil.toRadioCallsign(localCallsign),
-                    localCallsign, lat, lon, (float) alt,
+                    com.uvpro.plugin.util.CallsignUtil.toRadioCallsign(localCallsign()),
+                    localCallsign(), lat, lon, (float) alt,
                     speed, course, battery,
                     resolveLocalAtakTeamForOutbound());
 
@@ -2782,7 +2797,7 @@ public class CotBridge {
             }
 
             Ax25Frame frame = Ax25Frame.createUVProFrame(
-                    localCallsign, 0, packetBytes);
+                    localCallsign(), 0, packetBytes);
             byte[] ax25 = frame.encode();
 
             Log.d(TAG, "Sending GPS beacon: " + ax25.length + " bytes");
@@ -3714,7 +3729,7 @@ public class CotBridge {
 
             String lineUid = event.getUID();
             Log.d(TAG, "SA Relay: forwarding network All Chat Rooms over RF uid=" + lineUid);
-            chatBridge.sendChatOverRadio(localCallsign, ALL_CHAT_ROOMS, message, lineUid);
+            chatBridge.sendChatOverRadio(localCallsign(), ALL_CHAT_ROOMS, message, lineUid);
             return true;
         } catch (Exception e) {
             Log.w(TAG, "SA Relay: failed forwarding network chat", e);
