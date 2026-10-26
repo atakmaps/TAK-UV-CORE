@@ -1,14 +1,14 @@
-# UV-PRO Constitution
+# UV-CORE Constitution
 
-Updated: 2026-10-10
+Updated: 2026-10-25
 
 This file is binding. `AGENTS.md`, `docs/DEVELOPER-GUIDE.md`, `CONTRIBUTING.md`, README notes, and Cursor rules describe how to comply with it. When they disagree with this file, this file wins and the other document is wrong.
 
-The maintainer reviews and merges pull requests. `main` is branch-protected. The maintainer may bypass that protection for their own work. Everyone else lands changes through a pull request the maintainer accepts.
+The maintainer reviews and merges pull requests. `main` is branch-protected. Agents open a pull request. They do not push to `main`.
 
 ## I. One plugin, two radio transports
 
-UV-PRO (`com.uvpro.plugin`) talks to ATAK over two radio links:
+UV-CORE (`com.uvpro.plugin`, shown in ATAK as UV-CORE) talks to ATAK over two radio links:
 
 - a BTECH UV-PRO radio on Bluetooth SPP / KISS
 - a MeshCore companion on BLE

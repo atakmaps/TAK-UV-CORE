@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Development phone serial pinned for this branch/workstream.
-DEV_PHONE_SERIAL="ZT4229JR78"
+# Set DEVICE_SERIAL in the environment. Do not commit a phone serial.
+DEV_PHONE_SERIAL="${DEVICE_SERIAL:-}"
+if [[ -z "${DEV_PHONE_SERIAL}" ]]; then
+  echo "Set DEVICE_SERIAL to the adb serial from 'adb devices'." >&2
+  exit 1
+fi
 
 if [[ "${1:-}" == "--serial" ]]; then
   echo "${DEV_PHONE_SERIAL}"
