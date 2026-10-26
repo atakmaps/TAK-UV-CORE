@@ -9,7 +9,7 @@
 # Usage:
 #   ./tools/capture-prefs-sa-relay-digital-log.sh
 #   ./tools/capture-prefs-sa-relay-digital-log.sh DEVICE_SERIAL
-#   DEVICE_SERIAL=ZA223... ./tools/capture-prefs-sa-relay-digital-log.sh
+#   DEVICE_SERIAL=<adb-serial> ./tools/capture-prefs-sa-relay-digital-log.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

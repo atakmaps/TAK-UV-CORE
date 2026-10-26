@@ -1,8 +1,8 @@
-# Contributing to UV-PRO
+# Contributing to UV-CORE
 
-Updated: 2026-10-10
+Updated: 2026-10-25
 
-UV-PRO is an ATAK plugin that connects a BTECH UV-PRO radio and a MeshCore companion to the same map. Bug fixes and new features, including layout, are welcome. The maintainer reads the pull request and merges it when they agree.
+UV-CORE (`com.uvpro.plugin`) is an ATAK plugin that connects a BTECH UV-PRO radio and a MeshCore companion to the same map. Bug fixes and new features, including layout, are welcome. The maintainer reads the pull request and merges it when they agree.
 
 Binding rules: [`CONSTITUTION.md`](CONSTITUTION.md). How the code is put together: [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md). AI assistants: [`AGENTS.md`](AGENTS.md).
 

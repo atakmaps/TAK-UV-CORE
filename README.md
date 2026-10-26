@@ -1,6 +1,6 @@
-# UV-PRO — Open-Source BTECH Radio ↔ ATAK Bridge Plugin
+# UV-CORE — Open-Source BTECH Radio and MeshCore ↔ ATAK Bridge Plugin
 
-A free, open-source ATAK plugin that connects UV-PRO radios to the Android Team Awareness Kit (ATAK) over Bluetooth. Team members with radios can share positions, chat, and situational awareness data entirely off-grid — no cell service or internet required.
+A free, open-source ATAK plugin (shown as UV-CORE) that connects a BTECH UV-PRO radio and a MeshCore companion to the Android Team Awareness Kit (ATAK). Team members can share positions, chat, and situational awareness data entirely off-grid — no cell service or internet required.
 
 - Package: `com.uvpro.plugin`
 - Version string: `ext.PLUGIN_VERSION` in root `build.gradle` (the feature notes below lag that)

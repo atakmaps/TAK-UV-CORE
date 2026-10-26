@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Updated: 2026-10-10
+Updated: 2026-10-25
 
-This is the project guide for any AI assistant working on UV-PRO (Claude, Cursor, Copilot, Gemini, or anything else). Tool-specific files (`CLAUDE.md`, `.github/copilot-instructions.md`) only point here.
+This is the project guide for any AI assistant working on UV-CORE (Claude, Cursor, Copilot, Gemini, or anything else). Tool-specific files (`CLAUDE.md`, `.github/copilot-instructions.md`) only point here.
 
 Read this file, then [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md) for the area you are changing.
 
@@ -10,7 +10,7 @@ Read this file, then [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md) for th
 
 ## What this repository is
 
-UV-PRO is an ATAK plugin, package `com.uvpro.plugin`, target ATAK-CIV **5.6.0**. One plugin, two radios:
+UV-CORE is an ATAK plugin, package `com.uvpro.plugin`, shown in ATAK as UV-CORE, target ATAK-CIV **5.6.0**. One plugin, two radios:
 
 - BTECH UV-PRO over Bluetooth SPP / KISS (`BtConnectionManager`)
 - MeshCore companion over BLE (`MeshBtConnectionManager`)

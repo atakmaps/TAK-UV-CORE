@@ -60,9 +60,9 @@ Update this file as phases complete. Agents: **edit checkboxes here** instead of
 
 | Callsign | adb serial | Role |
 |----------|------------|------|
-| **JESTER_25** | `ZA223F72K9` | Bridge / observer (SA Relay + RF→TAK uplink host) |
-| **SMOKEY_15** | `ZT4229JR78` | RF-only (WiFi off) |
-| **JESTER_15** | `ZA223DT6J9` | WiFi-only (radio off) |
+| **JESTER_25** | `(adb serial)` | Bridge / observer (SA Relay + RF→TAK uplink host) |
+| **SMOKEY_15** | `(adb serial)` | RF-only (WiFi off) |
+| **JESTER_15** | `(adb serial)` | WiFi-only (radio off) |
 
 **Deploy:** `adb -s <serial> install -r app/build/outputs/apk/civ/debug/ATAK-Plugin-UVPro-1.9.52-*-civ-debug.apk`  
 **Restart ATAK:** `adb shell am force-stop com.atakmap.app.civ && adb shell monkey -p com.atakmap.app.civ -c android.intent.category.LAUNCHER 1`
@@ -71,8 +71,8 @@ Update this file as phases complete. Agents: **edit checkboxes here** instead of
 ```bash
 LOGDIR="/home/paul/Documents/ATAK/test-logs/phaseN-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$LOGDIR"
-adb -s ZA223F72K9 logcat -c
-adb -s ZA223F72K9 logcat -v threadtime | grep -iE 'UVPro\.(ChatBridge|CotBridge|Router|Reachability|WifiKeepalive|RfTakUplink|MeshBLE)' > "$LOGDIR/J25.log" &
+adb -s "$SERIAL" logcat -c
+adb -s "$SERIAL" logcat -v threadtime | grep -iE 'UVPro\.(ChatBridge|CotBridge|Router|Reachability|WifiKeepalive|RfTakUplink|MeshBLE)' > "$LOGDIR/J25.log" &
 ```
 
 ---

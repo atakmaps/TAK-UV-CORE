@@ -1,6 +1,6 @@
-# UV-PRO developer guide
+# UV-CORE developer guide
 
-Updated: 2026-10-10
+Updated: 2026-10-25
 
 This is how the plugin is built and how data moves through it. Binding rules are in [`CONSTITUTION.md`](../CONSTITUTION.md). Pull-request mechanics are in [`CONTRIBUTING.md`](../CONTRIBUTING.md). AI assistants start at [`AGENTS.md`](../AGENTS.md).
 
@@ -10,7 +10,7 @@ The README feature list is for users. It lags the code. The version string in ro
 
 ## What this plugin is
 
-UV-PRO is an ATAK plugin (`com.uvpro.plugin`) loaded inside the ATAK process. It gives one ATAK map two off-grid radios plus an optional Wi‑Fi/TAK bridge:
+UV-CORE is an ATAK plugin (`com.uvpro.plugin`, shown in ATAK as UV-CORE) loaded inside the ATAK process. It gives one ATAK map two off-grid radios plus an optional Wi‑Fi/TAK bridge:
 
 | Path | Hardware | Android link | Code |
 |---|---|---|---|
