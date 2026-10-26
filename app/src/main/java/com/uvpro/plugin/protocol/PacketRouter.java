@@ -198,11 +198,13 @@ public class PacketRouter {
             // Decrypt if encryption is enabled
             if (encryptionManager != null && encryptionManager.isEnabled()) {
                 byte[] decrypted = encryptionManager.decrypt(infoField);
-                if (decrypted != null) {
-                    infoField = java.util.Arrays.copyOf(decrypted, decrypted.length);
-                    java.util.Arrays.fill(decrypted, (byte) 0);
+                if (decrypted == null) {
+                    Log.w(TAG, "Dropping OPENRL packet from " + srcCall + "-" + srcSsid
+                            + " — RF encryption is on and payload failed to decrypt");
+                    return;
                 }
-                // If decryption returns null, use raw (unencrypted packet)
+                infoField = java.util.Arrays.copyOf(decrypted, decrypted.length);
+                java.util.Arrays.fill(decrypted, (byte) 0);
             }
 
             routeUVProPacket(srcCall, srcSsid, infoField, pathLen, inboundTransport);
