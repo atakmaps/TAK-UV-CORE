@@ -2776,12 +2776,7 @@ public class ChatBridge {
 
             // Find __chat element for room info
             CotDetail chat = detail.getFirstChildByName(0, "__chat");
-            if (chat != null) {
-                String room = chat.getAttribute("chatroom");
-                if (room != null && !room.isEmpty()) {
-                    chatRoom = room;
-                }
-            }
+            chatRoom = chatRoomOf(chat, chatRoom);
 
             if (message == null || message.isEmpty()) {
                 return;
@@ -2856,12 +2851,7 @@ public class ChatBridge {
         if (chat == null) {
             chat = detail.getFirstChildByName(0, "chat");
         }
-        if (chat != null) {
-            String room = chat.getAttribute("chatroom");
-            if (room != null && !room.isEmpty()) {
-                chatRoom = room;
-            }
-        }
+        chatRoom = chatRoomOf(chat, chatRoom);
         if (message == null || message.isEmpty()) {
             return false;
         }
@@ -2958,12 +2948,7 @@ public class ChatBridge {
         if (chat == null) {
             chat = detail.getFirstChildByName(0, "chat");
         }
-        if (chat != null) {
-            String room = chat.getAttribute("chatroom");
-            if (room != null && !room.isEmpty()) {
-                chatRoom = room;
-            }
-        }
+        chatRoom = chatRoomOf(chat, chatRoom);
 
         if (message == null || message.isEmpty()) {
             return;
@@ -3086,6 +3071,23 @@ public class ChatBridge {
      */
     public boolean shouldSendInboundDeliveredAck(String toCallsign) {
         return !isBroadcastRoom(toCallsign);
+    }
+
+    /**
+     * GeoChat room named by a {@code __chat} element. ATAK localizes {@code chatroom} (French UI:
+     * "Toutes les salles de chat") but keeps {@code id} = "All Chat Rooms" for the general room,
+     * so the id decides broadcast; otherwise the display name is used as before.
+     */
+    private static String chatRoomOf(CotDetail chat, String fallback) {
+        if (chat == null) {
+            return fallback;
+        }
+        String id = chat.getAttribute("id");
+        if (id != null && ALL_CHAT_ROOMS.equalsIgnoreCase(id.trim())) {
+            return ALL_CHAT_ROOMS;
+        }
+        String room = chat.getAttribute("chatroom");
+        return (room != null && !room.isEmpty()) ? room : fallback;
     }
 
     private static boolean isBroadcastRoom(String roomRaw) {
