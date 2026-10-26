@@ -3514,7 +3514,7 @@ public class CotBridge {
     }
 
     private static boolean isFriendlyNetworkSa(String type) {
-        return type != null && type.startsWith("a-f-G");
+        return type != null && type.startsWith("a-f-G-U");
     }
 
     private static String extractInboundSaCallsign(CotEvent event) {
