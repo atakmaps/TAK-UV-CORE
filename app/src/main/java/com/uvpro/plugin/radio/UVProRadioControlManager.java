@@ -9,6 +9,7 @@ import com.uvpro.plugin.location.RadioGpsBridge;
 import com.uvpro.plugin.location.RadioPositionFix;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
@@ -2301,7 +2302,7 @@ public class UVProRadioControlManager implements BtConnectionManager.RawDataList
         }
         int nameEnd = Math.min(payload.length, nameStart + 10);
         String raw = new String(Arrays.copyOfRange(payload, nameStart, nameEnd),
-                StandardCharsets.UTF_8);
+                Charset.forName("GBK"));
         int nullPos = raw.indexOf('\0');
         if (nullPos >= 0) {
             raw = raw.substring(0, nullPos);
@@ -2478,7 +2479,7 @@ public class UVProRadioControlManager implements BtConnectionManager.RawDataList
             writer.writeBool(mute);
             writer.writeInt(0, 4);
 
-            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            byte[] nameBytes = name.getBytes(Charset.forName("GBK"));
             byte[] padded = Arrays.copyOf(nameBytes, 10);
             writer.writeBytes(padded);
             return writer.toByteArray();
