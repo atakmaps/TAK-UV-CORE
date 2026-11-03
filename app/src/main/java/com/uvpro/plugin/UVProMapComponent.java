@@ -146,6 +146,10 @@ public class UVProMapComponent extends DropDownMapComponent {
     // Sub-systems
     private BtConnectionManager btConnectionManager;
     private MeshBtConnectionManager meshBtConnectionManager;
+    /** Digirig / USB audio AFSK receive path (third inbound link, receive only). */
+    private com.uvpro.plugin.modem.UsbAudioModemReceiver audioModemReceiver;
+    /** Digirig / USB audio AFSK transmit path; preferred by TransmitTransportResolver when on. */
+    private com.uvpro.plugin.modem.AudioModemTransport audioModemTransport;
     private PacketRouter packetRouter;
     private CotBridge cotBridge;
     private ChatBridge chatBridge;
@@ -411,6 +415,21 @@ try {
         view.postDelayed(this::applyAprsMarkerVisibility, 15000);
         radioControlManager = new UVProRadioControlManager(btConnectionManager);
         radioControlManager.start();
+        audioModemReceiver = new com.uvpro.plugin.modem.UsbAudioModemReceiver(
+                view.getContext(), packetRouter);
+        audioModemReceiver.start();
+        audioModemTransport = new com.uvpro.plugin.modem.AudioModemTransport(
+                view.getContext(), packetRouter, audioModemReceiver,
+                btConnectionManager, meshBtConnectionManager);
+        com.uvpro.plugin.modem.AudioModemServices.install(audioModemTransport);
+        audioModemTransport.setStateListener(() -> {
+            com.uvpro.plugin.modem.AudioModemTransport t = audioModemTransport;
+            if (t != null && dropDownReceiver != null) {
+                dropDownReceiver.onAudioModemTransmitStateChanged(
+                        t.isConnected(), t.getConnectedDeviceName());
+            }
+        });
+        audioModemTransport.start();
 
         // Status overlay: defer install until after GLWidgetsMapComponent is ready
         view.postDelayed(() -> com.uvpro.plugin.ui.RadioProfile.applyMapIcons(context), 2000);
@@ -802,6 +821,15 @@ try {
         UVProMeshServices.clear();
         com.uvpro.plugin.protocol.PositionRequester.clear();
         cancelMeshBootAutoConnectSchedules();
+        com.uvpro.plugin.modem.AudioModemServices.clear();
+        if (audioModemTransport != null) {
+            audioModemTransport.shutdown();
+            audioModemTransport = null;
+        }
+        if (audioModemReceiver != null) {
+            audioModemReceiver.shutdown();
+            audioModemReceiver = null;
+        }
         if (btConnectionManager != null) {
             btConnectionManager.shutdown();
             btConnectionManager.disconnect();

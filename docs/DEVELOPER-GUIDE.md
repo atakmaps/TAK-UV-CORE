@@ -65,6 +65,7 @@ Mesh auto-connect waits so both radios are not opening sockets at the same insta
 | Radio or mesh position as an ATAK GPS source | `location/` |
 | Tool Preferences and the plugin panel | `ui/SettingsFragment`, `res/xml/preferences.xml`, `res/layout/uvpro_dropdown.xml`, `UVProDropDownReceiver` |
 | Packet terminal | `terminal/` |
+| Software AFSK modem (Bell 202, HDLC/FCS) for TNC-less radios behind a USB audio interface such as a Digirig Lite. `UsbAudioModemReceiver` receives (tagged `RfInboundTransport.AUDIO`); `AudioModemTransport` transmits (a `BtConnectionManager` subclass, CM108 GPIO or VOX PTT, carrier-sense hold-off) and `TransmitTransportResolver` prefers it when `uvpro_audio_modem_tx_enabled` is on and the interface is ready. Check the modem with `tools/AfskLoopback.java` | `modem/` |
 | Shared-secret encryption | `crypto/EncryptionManager` |
 | Version and variant names | root `build.gradle` (`ext.PLUGIN_VERSION`), `app/build.gradle` |
 

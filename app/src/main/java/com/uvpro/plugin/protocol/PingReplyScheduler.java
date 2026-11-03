@@ -164,6 +164,12 @@ public final class PingReplyScheduler {
     }
 
     private BtConnectionManager resolveReplyTransport() {
+        if (pendingInboundTransport == RfInboundTransport.AUDIO) {
+            BtConnectionManager audio = com.uvpro.plugin.modem.AudioModemServices.getIfReady();
+            if (audio != null) {
+                return audio;
+            }
+        }
         BtConnectionManager inbound = pendingInboundTransport == RfInboundTransport.MESHCORE
                 ? meshTransport
                 : uvproTransport;

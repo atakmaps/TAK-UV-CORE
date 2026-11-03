@@ -85,4 +85,36 @@
         <item>14</item>
         <item>15</item>
     </string-array>
+    <string-array name="audio_modem_ptt_labels">
+        <item>USB GPIO (Digirig Lite / AIOC)</item>
+        <item>VOX on radio</item>
+    </string-array>
+    <string-array name="audio_modem_ptt_values">
+        <item>cm108</item>
+        <item>vox</item>
+    </string-array>
+    <string-array name="audio_modem_tx_level_labels">
+        <item>25 percent</item>
+        <item>50 percent</item>
+        <item>75 percent</item>
+        <item>100 percent</item>
+    </string-array>
+    <string-array name="audio_modem_tx_level_values">
+        <item>25</item>
+        <item>50</item>
+        <item>75</item>
+        <item>100</item>
+    </string-array>
+    <string-array name="audio_modem_txdelay_labels">
+        <item>200 ms</item>
+        <item>300 ms</item>
+        <item>500 ms</item>
+        <item>800 ms (VOX)</item>
+    </string-array>
+    <string-array name="audio_modem_txdelay_values">
+        <item>200</item>
+        <item>300</item>
+        <item>500</item>
+        <item>800</item>
+    </string-array>
 </resources>

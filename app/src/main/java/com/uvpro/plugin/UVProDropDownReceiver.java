@@ -7207,6 +7207,15 @@ public class UVProDropDownReceiver extends DropDownReceiver
         }
     }
 
+    /** Digirig transmit became ready or went away; re-pick the transmit radio. Main thread. */
+    public void onAudioModemTransmitStateChanged(boolean ready, String deviceName) {
+        applyActiveTransmitTransport();
+        notifyBeaconTransportChanged();
+        appendLog(ready
+                ? "Transmit: Digirig ready" + (deviceName != null ? " (" + deviceName + ")" : "")
+                : "Transmit: Digirig not ready; using radio toggles");
+    }
+
     private void applyActiveTransmitTransport() {
         BtConnectionManager active = resolveActiveTransmitManager();
         if (cotBridge != null) {

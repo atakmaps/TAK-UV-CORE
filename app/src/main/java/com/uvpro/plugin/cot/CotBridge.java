@@ -1396,6 +1396,8 @@ public class CotBridge {
             preferred = meshInboundManager;
         } else if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.UVPRO) {
             preferred = uvproInboundManager;
+        } else if (inbound == com.uvpro.plugin.protocol.RfInboundTransport.AUDIO) {
+            preferred = com.uvpro.plugin.modem.AudioModemServices.getIfReady();
         }
         if (preferred != null && preferred.isConnected()) {
             return preferred;

@@ -218,6 +218,84 @@
 
 
 
+        <com.atakmap.android.gui.PanCheckBoxPreference
+
+            android:key="uvpro_audio_modem_rx_enabled"
+
+            android:title="Digirig Audio Receive"
+
+            android:summary="Decode 1200 baud packets from a USB audio interface (Digirig Lite) on an analog FM channel."
+
+            android:defaultValue="false" />
+
+
+
+        <com.atakmap.android.gui.PanCheckBoxPreference
+
+            android:key="uvpro_audio_modem_tx_enabled"
+
+            android:title="Digirig Audio Transmit"
+
+            android:summary="Send packets through the USB audio interface. When the interface is ready this is used ahead of the MeshCore and UV-PRO transmit toggles. Analog FM channels only."
+
+            android:defaultValue="false" />
+
+
+
+        <com.atakmap.android.gui.PanListPreference
+
+            android:key="uvpro_audio_modem_ptt"
+
+            android:title="Digirig PTT"
+
+            android:summary="How the radio is keyed. VOX can also key on ATAK alert sounds while the interface is plugged in."
+
+            android:defaultValue="cm108"
+
+            android:dialogTitle="Digirig PTT"
+
+            android:entries="@array/audio_modem_ptt_labels"
+
+            android:entryValues="@array/audio_modem_ptt_values" />
+
+
+
+        <com.atakmap.android.gui.PanListPreference
+
+            android:key="uvpro_audio_modem_tx_level"
+
+            android:title="Digirig TX Audio Level"
+
+            android:summary="Peak level sent to the radio mic input. Lower it if the far end hears distortion."
+
+            android:defaultValue="50"
+
+            android:dialogTitle="Digirig TX Audio Level"
+
+            android:entries="@array/audio_modem_tx_level_labels"
+
+            android:entryValues="@array/audio_modem_tx_level_values" />
+
+
+
+        <com.atakmap.android.gui.PanListPreference
+
+            android:key="uvpro_audio_modem_txdelay_ms"
+
+            android:title="Digirig TX Delay"
+
+            android:summary="Lead-in before each packet while the radio keys up. VOX needs more."
+
+            android:defaultValue="300"
+
+            android:dialogTitle="Digirig TX Delay"
+
+            android:entries="@array/audio_modem_txdelay_labels"
+
+            android:entryValues="@array/audio_modem_txdelay_values" />
+
+
+
         <com.atakmap.android.gui.PanListPreference
 
             android:key="uvpro_retry_interval_min"

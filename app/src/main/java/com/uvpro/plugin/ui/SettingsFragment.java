@@ -133,6 +133,29 @@ public class SettingsFragment extends PluginPreferenceFragment
             "uvpro_restrict_chat_to_reachable_peers";
     public static final String PREF_PING_REPLY_ENABLED = "uvpro_ping_reply_enabled";
     public static final boolean DEFAULT_PING_REPLY_ENABLED = true;
+    public static final String PREF_AUDIO_MODEM_RX_ENABLED = "uvpro_audio_modem_rx_enabled";
+    public static final boolean DEFAULT_AUDIO_MODEM_RX_ENABLED = false;
+    public static final String PREF_AUDIO_MODEM_TX_ENABLED = "uvpro_audio_modem_tx_enabled";
+    public static final boolean DEFAULT_AUDIO_MODEM_TX_ENABLED = false;
+    /** {@code cm108} (USB HID GPIO3, Digirig Lite / AIOC) or {@code vox} (radio keys on audio). */
+    public static final String PREF_AUDIO_MODEM_PTT = "uvpro_audio_modem_ptt";
+    public static final String DEFAULT_AUDIO_MODEM_PTT = "cm108";
+    public static final String PREF_AUDIO_MODEM_TX_LEVEL = "uvpro_audio_modem_tx_level";
+    public static final String DEFAULT_AUDIO_MODEM_TX_LEVEL = "50";
+    public static final String PREF_AUDIO_MODEM_TXDELAY_MS = "uvpro_audio_modem_txdelay_ms";
+    public static final String DEFAULT_AUDIO_MODEM_TXDELAY_MS = "300";
+    private static final String AUDIO_MODEM_RX_DESC =
+            "Decode 1200 baud packets from a USB audio interface (Digirig Lite) on an analog FM channel.";
+    private static final String AUDIO_MODEM_TX_DESC =
+            "Send packets through the USB audio interface. When the interface is ready this is used "
+                    + "ahead of the MeshCore and UV-PRO transmit toggles. Analog FM channels only.";
+    private static final String AUDIO_MODEM_PTT_DESC =
+            "How the radio is keyed. VOX can also key on ATAK alert sounds while the interface "
+                    + "is plugged in.";
+    private static final String AUDIO_MODEM_TX_LEVEL_DESC =
+            "Peak level sent to the radio mic input. Lower it if the far end hears distortion.";
+    private static final String AUDIO_MODEM_TXDELAY_DESC =
+            "Lead-in before each packet while the radio keys up. VOX needs more.";
     public static final String PREF_PING_REPLY_SAME_TRANSPORT = "uvpro_ping_reply_same_transport";
     public static final String PREF_ATAK_MESHCORE_TRANSMIT = "uvpro_atak_meshcore_transmit";
     public static final String PREF_ATAK_UVPRO_TRANSMIT = "uvpro_atak_uvpro_transmit";
@@ -200,10 +223,14 @@ public class SettingsFragment extends PluginPreferenceFragment
             PREF_RF_TO_TAK_UPLINK_ENABLED,
             PREF_DISABLE_MESH_BEACON_LIMITING,
             NetSlotConfig.PREF_ADMIN_SETTINGS_ENABLED,
+            PREF_AUDIO_MODEM_RX_ENABLED,
+            PREF_AUDIO_MODEM_TX_ENABLED,
     };
 
     private static boolean isCheckboxPreferenceKey(String key) {
         return PREF_PING_REPLY_ENABLED.equals(key)
+                || PREF_AUDIO_MODEM_RX_ENABLED.equals(key)
+                || PREF_AUDIO_MODEM_TX_ENABLED.equals(key)
                 || PREF_SA_RELAY_ENABLED.equals(key)
                 || PREF_RF_TO_TAK_UPLINK_ENABLED.equals(key)
                 || PREF_DISABLE_MESH_BEACON_LIMITING.equals(key)
@@ -344,8 +371,13 @@ public class SettingsFragment extends PluginPreferenceFragment
         wireListPreference(PREF_RETRY_INTERVAL_MIN);
         wireListPreference(PREF_RETRY_MAX);
         wireListPreference(PREF_APRS_SSID);
+        wireListPreference(PREF_AUDIO_MODEM_PTT);
+        wireListPreference(PREF_AUDIO_MODEM_TX_LEVEL);
+        wireListPreference(PREF_AUDIO_MODEM_TXDELAY_MS);
 
         wireCheckBoxPreference(PREF_PING_REPLY_ENABLED, DEFAULT_PING_REPLY_ENABLED);
+        wireCheckBoxPreference(PREF_AUDIO_MODEM_RX_ENABLED, DEFAULT_AUDIO_MODEM_RX_ENABLED);
+        wireCheckBoxPreference(PREF_AUDIO_MODEM_TX_ENABLED, DEFAULT_AUDIO_MODEM_TX_ENABLED);
         wireCheckBoxPreference(PREF_SA_RELAY_ENABLED, false);
         wireCheckBoxPreference(PREF_RF_TO_TAK_UPLINK_ENABLED, false);
         wireCheckBoxPreference(PREF_DISABLE_MESH_BEACON_LIMITING, false);
@@ -766,6 +798,15 @@ public class SettingsFragment extends PluginPreferenceFragment
         }
         if (PREF_APRS_SSID.equals(key)) {
             return DEFAULT_APRS_SSID;
+        }
+        if (PREF_AUDIO_MODEM_PTT.equals(key)) {
+            return DEFAULT_AUDIO_MODEM_PTT;
+        }
+        if (PREF_AUDIO_MODEM_TX_LEVEL.equals(key)) {
+            return DEFAULT_AUDIO_MODEM_TX_LEVEL;
+        }
+        if (PREF_AUDIO_MODEM_TXDELAY_MS.equals(key)) {
+            return DEFAULT_AUDIO_MODEM_TXDELAY_MS;
         }
         return "";
     }
@@ -3558,6 +3599,14 @@ public class SettingsFragment extends PluginPreferenceFragment
 
         setCheckBoxDescriptionSummary(PREF_PING_REPLY_ENABLED,
                 "Automatically reply to incoming pings with your position");
+        setCheckBoxDescriptionSummary(PREF_AUDIO_MODEM_RX_ENABLED, AUDIO_MODEM_RX_DESC);
+        setCheckBoxDescriptionSummary(PREF_AUDIO_MODEM_TX_ENABLED, AUDIO_MODEM_TX_DESC);
+        setSummaryWithValue(PREF_AUDIO_MODEM_PTT, AUDIO_MODEM_PTT_DESC,
+                getListPreferenceValueLabel(PREF_AUDIO_MODEM_PTT));
+        setSummaryWithValue(PREF_AUDIO_MODEM_TX_LEVEL, AUDIO_MODEM_TX_LEVEL_DESC,
+                getListPreferenceValueLabel(PREF_AUDIO_MODEM_TX_LEVEL));
+        setSummaryWithValue(PREF_AUDIO_MODEM_TXDELAY_MS, AUDIO_MODEM_TXDELAY_DESC,
+                getListPreferenceValueLabel(PREF_AUDIO_MODEM_TXDELAY_MS));
         setSummaryWithValue(PREF_RETRY_INTERVAL_MIN,
                 "How long to wait before retransmitting an unacknowledged message",
                 getListPreferenceValueLabel(PREF_RETRY_INTERVAL_MIN));
@@ -3770,6 +3819,21 @@ public class SettingsFragment extends PluginPreferenceFragment
         if (PREF_PING_REPLY_ENABLED.equals(key)) {
             return "Automatically reply to incoming pings with your position";
         }
+        if (PREF_AUDIO_MODEM_RX_ENABLED.equals(key)) {
+            return AUDIO_MODEM_RX_DESC;
+        }
+        if (PREF_AUDIO_MODEM_TX_ENABLED.equals(key)) {
+            return AUDIO_MODEM_TX_DESC;
+        }
+        if (PREF_AUDIO_MODEM_PTT.equals(key)) {
+            return AUDIO_MODEM_PTT_DESC;
+        }
+        if (PREF_AUDIO_MODEM_TX_LEVEL.equals(key)) {
+            return AUDIO_MODEM_TX_LEVEL_DESC;
+        }
+        if (PREF_AUDIO_MODEM_TXDELAY_MS.equals(key)) {
+            return AUDIO_MODEM_TXDELAY_DESC;
+        }
         if (PREF_RETRY_INTERVAL_MIN.equals(key)) {
             return "How long to wait before retransmitting an unacknowledged message";
         }
@@ -3864,7 +3928,10 @@ public class SettingsFragment extends PluginPreferenceFragment
         if (NetSlotConfig.PREF_ADMIN_SETTINGS_ENABLED.equals(key)) {
             return getCheckBoxPreferenceValueLabel(key, false);
         }
-        if (PREF_RETRY_INTERVAL_MIN.equals(key) || PREF_RETRY_MAX.equals(key)) {
+        if (PREF_RETRY_INTERVAL_MIN.equals(key) || PREF_RETRY_MAX.equals(key)
+                || PREF_AUDIO_MODEM_PTT.equals(key)
+                || PREF_AUDIO_MODEM_TX_LEVEL.equals(key)
+                || PREF_AUDIO_MODEM_TXDELAY_MS.equals(key)) {
             return getListPreferenceValueLabel(key);
         }
         if (PREF_APRS_CALLSIGN.equals(key) && ctx != null) {
@@ -3929,6 +3996,9 @@ public class SettingsFragment extends PluginPreferenceFragment
                 value = getPreferenceManager().getSharedPreferences().getString(key, null);
             } catch (ClassCastException ignored) {
             }
+        }
+        if (value == null || value.isEmpty()) {
+            value = defaultStringForPreferenceKey(key);
         }
         if (value == null || value.isEmpty()) {
             return "";
@@ -4185,6 +4255,42 @@ public class SettingsFragment extends PluginPreferenceFragment
     public static boolean isPingReplyEnabled(Context context) {
         return getPrefs(context)
                 .getBoolean(PREF_PING_REPLY_ENABLED, DEFAULT_PING_REPLY_ENABLED);
+    }
+
+    /** Decode AFSK packets from a USB audio interface (Digirig) as a third receive path. */
+    public static boolean isAudioModemRxEnabled(Context context) {
+        return getPrefs(context)
+                .getBoolean(PREF_AUDIO_MODEM_RX_ENABLED, DEFAULT_AUDIO_MODEM_RX_ENABLED);
+    }
+
+    /** Send packets through the USB audio interface; preferred over the radio toggles when ready. */
+    public static boolean isAudioModemTxEnabled(Context context) {
+        return getPrefs(context)
+                .getBoolean(PREF_AUDIO_MODEM_TX_ENABLED, DEFAULT_AUDIO_MODEM_TX_ENABLED);
+    }
+
+    /** True for VOX keying, false for CM108 GPIO push-to-talk. */
+    public static boolean isAudioModemVoxPtt(Context context) {
+        return "vox".equals(getPrefs(context)
+                .getString(PREF_AUDIO_MODEM_PTT, DEFAULT_AUDIO_MODEM_PTT));
+    }
+
+    /** Peak TX audio level, percent of full scale. */
+    public static int getAudioModemTxLevelPercent(Context context) {
+        return parseIntPref(context, PREF_AUDIO_MODEM_TX_LEVEL, DEFAULT_AUDIO_MODEM_TX_LEVEL);
+    }
+
+    /** Flags sent after keying, before the frame. */
+    public static int getAudioModemTxDelayMs(Context context) {
+        return parseIntPref(context, PREF_AUDIO_MODEM_TXDELAY_MS, DEFAULT_AUDIO_MODEM_TXDELAY_MS);
+    }
+
+    private static int parseIntPref(Context context, String key, String defaultValue) {
+        try {
+            return Integer.parseInt(getPrefs(context).getString(key, defaultValue).trim());
+        } catch (RuntimeException e) {
+            return Integer.parseInt(defaultValue);
+        }
     }
 
     /** Ping replies always TX on the transport that received the ping. */

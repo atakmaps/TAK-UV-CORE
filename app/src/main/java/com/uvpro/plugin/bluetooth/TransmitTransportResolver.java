@@ -3,6 +3,8 @@ package com.uvpro.plugin.bluetooth;
 /**
  * Picks the active RF transmit transport from user toggle preferences.
  * When the preferred transport is not connected, falls back to the other link if available.
+ * Digirig audio transmit, when the user turned it on and the interface is ready, comes first;
+ * it is an explicit opt-in that is off by default.
  */
 public final class TransmitTransportResolver {
 
@@ -14,6 +16,10 @@ public final class TransmitTransportResolver {
             boolean uvproTransmitEnabled,
             BtConnectionManager meshManager,
             BtConnectionManager uvproManager) {
+        BtConnectionManager audio = com.uvpro.plugin.modem.AudioModemServices.getIfReady();
+        if (audio != null) {
+            return audio;
+        }
         boolean meshAllowed = com.uvpro.plugin.ui.RadioProfile.shows(
                 com.uvpro.plugin.ui.RadioSurfaceCatalog.Role.MESH, null);
         boolean uvproAllowed = com.uvpro.plugin.ui.RadioProfile.shows(
